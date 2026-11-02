@@ -1,0 +1,123 @@
+#include "driver/i2s.h"
+#include "esp_mn_iface.h"     // Interface WakeNet (Mot d'activation)
+#include "esp_mn_models.h"    // Interface MultiNet (Mots-clés de commandes)
+
+#include "module_micro.h"
+#include "module_camera.h"
+
+#define BUFFER_AUDIO_SIZE 512
+/* CABLAGE
+Le microphone INMP441 est un capteur audio numérique utilisant le protocole I2S. 
+Pour garantir l'absence de conflit avec les composants de votre carte Waveshare (Modem 4G, Caméra, Carte SD, LED), nous utilisons le brochage validé précédemment :
+VDD ➡️ 3V3 (Alimentation 3.3V)
+GND ➡️ GND (Masse)
+SCK / BCK (Bit Clock) ➡️ GPIO 4
+WS (Word Select / Horloge Canal) ➡️ GPIO 5
+SD (Serial Data / Données) ➡️ GPIO 3
+L/R (Left/Right Channel) ➡️ GND (Sélectionne le canal Gauche / Mode Mono)*/
+
+
+
+// Instance des modèles neuronaux d'Espressif (chargés depuis la Flash/PSRAM)
+static const esp_mn_iface_t *multinet = &MULTINET_MODEL;
+static esp_mn_iface_data_t *model_data = NULL;
+
+
+
+bool initialiserMicrophone() {
+    Serial.println("🎙️ [IA_VOCALE] Initialisation du micro et chargement des réseaux de neurones...");
+
+    // 1. Configuration standard du bus I2S (16kHz / 16-bit requis par le modèle d'IA)
+    i2s_config_t i2s_config = {
+        .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),
+        .sample_rate = 16000,
+        .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT, // Le modèle IA exige du 16-bit natif
+        .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
+        .communication_format = I2S_COMM_FORMAT_STAND_I2S,
+        .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
+        .dma_buf_count = 4,
+        .dma_buf_len = BUFFER_AUDIO_SIZE,
+        .use_apll = false
+    };
+
+    i2s_pin_config_t pin_config = {
+        .bck_io_num = I2S_PIN_BCK,
+        .ws_io_num = I2S_PIN_WS,
+        .data_out_num = I2S_PIN_NO_CHANGE,        
+        .data_in_num = I2S_PIN_SD
+    };
+
+    if (i2s_driver_install(I2S_PORT, &i2s_config, 0, NULL) != ESP_OK ||
+        i2s_set_pin(I2S_PORT, &pin_config) != ESP_OK) {
+        Serial.println("❌ [AUDIO_ERR] Échec matériel de la configuration I2S.");
+        return false;
+    }
+
+        // 2. Initialisation du moteur d'intelligence artificielle MultiNet (En option stockée en PSRAM)
+    // On initialise le modèle linguistique
+    model_data = multinet->create(&MULTINET_COEFF, 4000); // 4000 ms de fenêtre d'analyse max
+    
+    if (model_data == NULL) {
+        Serial.println("❌ [IA_ERR] Échec du chargement du modèle de mots-clés en PSRAM !");
+        return false;
+    }
+    
+    Serial.println("✅ [IA_VOCALE] Modèle linguistique chargé en PSRAM. Écoute active.");
+    return true;
+}
+
+void tacheEnregistrementMicro(void * pvParameters) {
+    Serial.println("🎙️ [IA_TASK] Tâche neuronale en cours d'écoute...");
+    
+    // Le moteur IA demande des paquets d'échantillons de taille fixe
+    int nombreEchantillonsRequis = multinet->get_samp_chunksize(model_data);
+    int16_t *bufferAudio = (int16_t *)malloc(nombreEchantillonsRequis * sizeof(int16_t));
+
+    if (bufferAudio == NULL) {
+        Serial.println("❌ [IA_ERR] Impossible d'allouer le buffer d'échantillonnage.");
+        vTaskDelete(NULL);
+    }
+
+    size_t octetsLus = 0;
+
+    while(1) {
+        // 1. Extraction en direct du son de l'INMP441
+        i2s_read(I2S_PORT, bufferAudio, nombreEchantillonsRequis * sizeof(int16_t), &octetsLus, portMAX_DELAY);
+
+        // 2. Injection du flux binaire sonore dans le réseau de neurones
+        // La fonction renvoie l'ID de la commande si un mot correspond à la base de données
+        int command_id = multinet->detect(model_data, bufferAudio);
+
+        // 3. Déclenchement des scénarios de votre architecture FreeRTOS
+        if (command_id > 0) {
+            Serial.printf("🎙️ 🧠 [IA] Mot-clé détecté ! ID de commande : %d\n", command_id);
+
+            // Aiguillage vers vos modules
+            switch(command_id) {
+                case CommandesVocales::PRENDRE_PHOTO: // Correspond à "Take a photo" dans la configuration
+                    Serial.println("🎙️ 📸 Action -> Déclenchement Caméra (Sauvegarde SD)");
+                    if (xTacheCameraHandle != NULL) {
+                        xTaskNotify(xTacheCameraHandle, static_cast<uint32_t>(ModeEnvoi::CARTE_SD), eSetValueWithOverwrite);
+                    }
+                    break;
+
+                case CommandesVocales::DONNER_HEURE: // Correspond à "Tell me the time"
+                    Serial.println("🎙️ ⏰ Action -> Affichage de l'heure système");
+                    // Appel de votre fonction globale existante
+                    break;
+
+                case CommandesVocales::ENVOYER_ALERT_SMS: // Correspond à "Send an alert"
+                    Serial.println("🎙️ 🛰️ Action -> Envoi de la position GPS par SMS/MMS");
+                    // Appel vers votre tâche modem
+                    break;
+
+                default:
+                    Serial.println("⚠️ Commande vocale valide mais aucun scénario associé.");
+                    break;
+            }
+            
+            // Petite pause pour éviter les doubles déclenchements accidentels
+            vTaskDelay(pdMS_TO_TICKS(1500));
+        }
+    }
+}

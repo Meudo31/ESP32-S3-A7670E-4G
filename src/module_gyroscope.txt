@@ -1,0 +1,246 @@
+// Module HW_290_GY_87
+//      MPU6050
+//      HMC5883L
+//      BMP180
+
+#include <Wire.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_MPU6050.h>
+#include <Adafruit_HMC5883_U.h>
+#include <Adafruit_BMP085.h>
+
+#include "module_gyroscope.h"
+#include "module_SD.h"
+#include "module_DateHeure.h"
+#include "module_camera.h"
+
+
+#define GRAVITE_TERRESTRE 9.81
+
+
+// Variables globales de calcul (internes à ce module)
+Adafruit_MPU6050 mpu;
+Adafruit_HMC5883_Unified mag = Adafruit_HMC5883_Unified(12345);
+Adafruit_BMP085 bmp;
+
+unsigned long dernierTempsMicros = 0;
+float vitesseX = 0.0, vitesseY = 0.0, vitesseZ = 0.0;
+
+SemaphoreHandle_t xSemMouvementGyroDetecte;
+GyroData lastGyroscopeData;
+
+extern void IRAM_ATTR fonctionInterruptionMPU();
+
+
+bool initialiserGyroscope() {
+    my_log_printf("🔄 [IMU] Initialisation du bus I2C et du MPU6050...");
+    
+    // 1. Initialisation du bus I2C sur les bonnes broches de la carte
+    // L'ESP32-S3 permet d'assigner l'I2C Wire sur les pins 7 et 6
+    if (!Wire.begin(PIN_SDA, PIN_SCL, 100000)) { // 100 kHz
+        my_log_printf("❌ [IMU_ERR] Échec de l'initialisation du bus I2C !");
+        return false;
+    }
+
+    // 2. Vérification de la présence du capteur MPU6050
+    if (!mpu.begin()) {
+        my_log_printf("❌ [IMU_ERR] Capteur MPU6050 introuvable sur le bus I2C !");
+        return false;
+    }
+
+    // 2. Initialisation du HMC5883L
+    if (!mag.begin()) {
+        Serial.println("Erreur: Impossible de trouver le HMC5883L");
+        while (1);
+    }
+
+    // 3. Initialisation du BMP180
+    if (!bmp.begin()) {
+        Serial.println("Erreur: Impossible de trouver le BMP180");
+        while (1);
+    }
+
+
+    xSemMouvementGyroDetecte = xSemaphoreCreateBinary();
+    if (xSemMouvementGyroDetecte == NULL) return false;
+
+    pinMode(PIN_MPU_INT, INPUT_PULLUP);
+
+
+    // 3. Configuration des plages de mesure (ajustables selon vos besoins)
+    mpu.setAccelerometerRange(MPU6050_RANGE_8_G);  // Plage accéléromètre : +/- 8G
+    mpu.setGyroRange(MPU6050_RANGE_500_DEG);       // Plage gyroscope : +/- 500 deg/s
+    mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);    // Filtre passe-bas pour stabiliser les mesures
+    mpu.setMotionDetectionThreshold(5);            // (5 x 32 mg = 160mg) Si l'appareil subit une secousse ou un déplacement linéaire qui dépasse cette accélération de 160mg : (5 x 32 mg = 160mg (soit environ 1,57m/s^2)) sur l'un de ses 3 axes, la condition de mouvement est validée.
+    mpu.setMotionDetectionDuration(10);            // Cela évite les "fausses alertes" électriques ou les micro-chocs isolés. Si le capteur détecte un pic d'accélération qui ne dure que 2 ms, il l'ignore. Le signal doit être maintenu pendant 10 ms pour que le capteur valide définitivement l'intrusion.
+    mpu.setMotionInterrupt(true);                  // true donne l'autorisation au processeur interne du MPU6050 de modifier l'état électrique de la broche physique INT.
+    
+    attachInterrupt(digitalPinToInterrupt(PIN_MPU_INT), fonctionInterruptionMPU, RISING);
+    
+
+    my_log_printf("✅ [IMU] Capteur MPU6050 configuré avec succès.");
+    return true;
+}
+
+
+void tacheUpdateAllDataGyro_HW_290_GY_87_MPU6050_HMC5883L_BMP180(void * pvParameters) {
+    my_log_printf("📊 [IMU_TASK] Démarrage des calculs physiques.");
+    
+    sensors_event_t a, g, temp;
+
+    while(1) {
+        // 1. Gestion du temps écoulé (Delta t précis pour les calculs de vitesse)
+        unsigned long tempsActuelMicros = micros();
+        float dt = (tempsActuelMicros - dernierTempsMicros) / 1000000.0; // Conversion en secondes
+        dernierTempsMicros = tempsActuelMicros;
+
+        // Évite un calcul aberrant au tout premier cycle ou après un bug de l'horloge
+        if (dt <= 0.0 || dt > 1.0) dt = 0.1; 
+
+        // 2. Acquisition des données brutes HMC5883L (Boussole) ---
+        mpu.getEvent(&a, &g, &temp);
+        lastGyroscopeData.accelerationX = a.acceleration.x;
+        lastGyroscopeData.accelerationY = a.acceleration.y;
+        lastGyroscopeData.accelerationZ = a.acceleration.z;
+
+        // 3. Calcul des forces en G (Magnitude globale de l'accélération)
+        float forceGTotal = sqrt(pow(a.acceleration.x, 2) + 
+                                 pow(a.acceleration.y, 2) + 
+                                 pow(a.acceleration.z, 2)) / GRAVITE_TERRESTRE;
+
+        // 4. Calcul des angles d'inclinaison (en degrés)
+        // Roll (Roulis) : inclinaison gauche/droite
+        float roll = atan2(a.acceleration.y, a.acceleration.z) * 180.0 / M_PI;
+        // Pitch (Tangage) : inclinaison avant/arrière
+        float pitch = atan2(-a.acceleration.x, sqrt(pow(a.acceleration.y, 2) + pow(a.acceleration.z, 2))) * 180.0 / M_PI;
+
+        // 5. Calcul de l'estimation de la vitesse linéaire (m/s)
+        // Pour estimer la vitesse d'un déplacement, on retire l'effet de la pesanteur théorique (Z)
+        float accPureZ = a.acceleration.z - GRAVITE_TERRESTRE;
+        
+        // Intégration mathématique (V = a * dt)
+        vitesseX += a.acceleration.x * dt;
+        vitesseY += a.acceleration.y * dt;
+        vitesseZ += accPureZ * dt;
+
+        // Vitesse scalaire globale résultante (conversion optionnelle en km/h : multiplier par 3.6)
+        float vitesseGlobaleMS = sqrt(pow(vitesseX, 2) + pow(vitesseY, 2) + pow(vitesseZ, 2));
+
+
+        lastGyroscopeData.accelerationX     = a.acceleration.x;
+        lastGyroscopeData.accelerationY     = a.acceleration.y;
+        lastGyroscopeData.accelerationZ     = a.acceleration.z;
+        lastGyroscopeData.vitesseX          = vitesseX;
+        lastGyroscopeData.vitesseY          = vitesseY;
+        lastGyroscopeData.vitesseZ          = vitesseY;
+        lastGyroscopeData.temperature       = temp.temperature;
+        lastGyroscopeData.roll              = roll;
+        lastGyroscopeData.pitch             = pitch;
+        lastGyroscopeData.forceGTotal       = forceGTotal;
+        lastGyroscopeData.vitesseGlobaleMS  = vitesseGlobaleMS;
+        lastGyroscopeData.timeStamp         = Date_Heure();
+
+
+        // --- 2. Lecture HMC5883L (Boussole) ---
+        sensors_event_t event_mag;
+        mag.getEvent(&event_mag);
+
+        // Calcul du cap (Heading) en radians, puis en degrés
+        float heading = atan2(event_mag.magnetic.y, event_mag.magnetic.x);
+        
+        // Ajustement de la déclinaison magnétique (Optionnel, environ +0.03 rad en France)
+        float declinationAngle = 0.03;
+        heading += declinationAngle;
+        
+        // Correction des angles si en dehors de [0, 2*PI]
+        if(heading < 0) heading += 2*PI;
+        if(heading > 2*PI) heading -= 2*PI;
+        float headingDegrees = heading * 180/M_PI;
+
+        lastGyroscopeData.champMagnetiqueX = event_mag.magnetic.x;
+        lastGyroscopeData.champMagnetiqueY = event_mag.magnetic.y;
+        lastGyroscopeData.champMagnetiqueZ = event_mag.magnetic.z;
+        lastGyroscopeData.cap              = headingDegrees;
+
+        my_log_printf("--- BOUSSOLE (HMC5883L) ---\n");
+        my_log_printf("Champ magnétique (uT): X=%.2f, Y=%.2f, Z=%.2f\n",     event_mag.magnetic.x, event_mag.magnetic.y, event_mag.magnetic.z);
+        my_log_printf("Orientation (Cap):      %.1f° (0=Nord, 90=Est...)\n", headingDegrees);
+
+
+
+        // --- 3. Lecture BMP180 (Environnement) ---
+        lastGyroscopeData.bmpTemperature = bmp.readTemperature();
+        lastGyroscopeData.perssionAtmo   = bmp.readPressure();
+        lastGyroscopeData.bmpAltitude    = bmp.readAltitude();
+
+
+        my_log_printf("--- ENVIRONNEMENT (BMP180) ---\n");
+        my_log_printf("Température:            %.1f °C\n",      bmp.readTemperature());
+        my_log_printf("Pression:               %ld Pa\n",       bmp.readPressure());
+        my_log_printf("Altitude estimée:       %.1f mètres\n",  bmp.readAltitude());
+
+
+        // 6. Formatage des données calculées pour la carte SD
+        // Structure de la ligne : G_Total;Pitch,Roll;Vitesse_MS
+        String donneesCalculees = String(forceGTotal, 2)                        + ";" +
+                                  String(pitch, 1) + "," + String(roll, 1)      + ";" +
+                                  String(vitesseGlobaleMS, 2)                   + ";" +
+                                  String(temp.temperature, 2)                   + ";" +
+                                  String(event_mag.magnetic.x, 2)               + "," +
+                                  String(event_mag.magnetic.y, 2)               + "," +
+                                  String(event_mag.magnetic.z, 2)               + ";" +
+                                  String(lastGyroscopeData.bmpTemperature, 2)   + ";" +
+                                  String(lastGyroscopeData.perssionAtmo,   2)   + ";" +
+                                  String(lastGyroscopeData.bmpAltitude,    2);
+                                  
+        // 7. Envoi au gestionnaire SD (Type 2 pour l'IMU)
+        bool stockageOk = envoyerAuStockage(TypeDonneeSD::GYRO, donneesCalculees);
+
+        if (!stockageOk) {
+            my_log_printf("⚠️ [IMU_WARN] Tampon SD saturé, perte du calcul de dynamique.");
+        }
+
+
+        // Fréquence d'échantillonnage rapide (100 ms) pour une meilleure précision d'intégration
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+
+void IRAM_ATTR fonctionInterruptionMPU() {
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    if (xSemMouvementGyroDetecte != NULL) {
+        xSemaphoreGiveFromISR(xSemMouvementGyroDetecte, &xHigherPriorityTaskWoken);
+    }
+    if (xHigherPriorityTaskWoken) {
+        portYIELD_FROM_ISR();
+    }
+}
+
+void tacheInterruptionMouvementGyro(void * pvParameters) {
+    my_log_printf("📊 [IMU_TASK] Surveillance anti-intrusion active.");
+
+    while(1) {
+        // En veille totale tant qu'aucun mouvement n'est physique
+        if (xSemaphoreTake(xSemMouvementGyroDetecte, portMAX_DELAY) == pdPASS) {
+            
+            my_log_printf("\n🚨 [ALERTE_IMU] MOUVEMENT SUSPECT DÉTECTÉ !");
+            
+            // --- LIEN CRITIQUE AVEC LA TÂCHE 1 (CAMÉRA) ---
+            if (xTacheCameraHandle != NULL) {
+                my_log_printf("📸 [IMU -> CAM] Envoi de l'ordre de capture immédiate (Scénario : Enregistrement SD)...");
+                
+                // On envoie l'ordre à la caméra. Ici, on demande le scénario CARTE_SD pour stocker la preuve de l'intrusion.
+                xTaskNotify(xTacheCameraHandle, static_cast<uint32_t>(QueFaireDeLObjet_Values::ENVOIE_SMS), eSetValueWithOverwrite);
+
+            } else {my_log_printf("❌ [IMU_ERR] Impossible de déclencher la photo : La Tâche 1 n'est pas initialisée !");}
+            
+            // Temporisation d'anti-rebond pour éviter de mitrailler des photos si le capteur continue de bouger
+            vTaskDelay(pdMS_TO_TICKS(5000)); // Pause de 5 secondes après une alerte
+            
+            // Nettoyage de la file d'interruption pour réarmement propre
+            xSemaphoreTake(xSemMouvementGyroDetecte, 0);
+            my_log_printf("📊 [IMU_TASK] Zone sécurisée. Réarmement de l'alarme...");
+        }
+    }
+}

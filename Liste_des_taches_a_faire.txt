@@ -1,0 +1,364 @@
+
+
+Alim & Batterie
+	- Définir qui aliment l'ESP32, Batterie ou Moto
+	- Surveillance du niveau et de la charge de la batterie de la Moto
+	- Surveillance du niveau et de la charge de la batterie
+	- Surveillance de l alimentation 12V moto active ou pas et tension avant démarrage du moteur et après son extinction
+	- Batterie : Niveau
+	
+GSM
+	- ajouter la gestion des numéros dans le répertoire :
+			#include <Arduino.h>
+			#include <Preferences.h>
+			#include <vector>
+
+			// Structure d'un contact
+			struct Contact {
+				String nom;
+				String numero;
+			};
+
+			// Liste dynamique en RAM pour travailler rapidement
+			std::vector<Contact> listeContacts;
+
+			// Instance de Preferences
+			Preferences preferences;
+
+			// --- FONCTION : Charger les contacts depuis la mémoire permanente ---
+			void chargerContactsDepuisFlash() {
+				listeContacts.clear();
+				
+				// Ouvrir l'espace de stockage "repertoire" en mode lecture seule (true)
+				preferences.begin("repertoire", true);
+				
+				// Récupérer le nombre total de contacts sauvegardés (0 par défaut)
+				int total = preferences.getInt("total", 0);
+				Serial.printf("[FLASH] Chargement de %d contact(s)...\n", total);
+				
+				for (int i = 0; i < total; i++) {
+					// Recréer les clés uniques (ex: "n0", "num0", "n1", "num1"...)
+					String cleNom = "n" + String(i);
+					String cleNumero = "num" + String(i);
+					
+					Contact c;
+					c.nom = preferences.getString(cleNom.c_str(), "Inconnu");
+					c.numero = preferences.getString(cleNumero.c_str(), "");
+					
+					if (c.numero != "") {
+						listeContacts.push_back(c);
+						Serial.printf(" Loaded -> %s : %s\n", c.nom.c_str(), c.numero.c_str());
+					}
+				}
+				
+				preferences.end();
+			}
+
+			// --- FONCTION : Sauvegarder toute la liste en mémoire permanente ---
+			void sauvegarderContactsEnFlash() {
+				// Ouvrir en mode lecture/écriture (false)
+				preferences.begin("repertoire", false);
+				
+				// Nettoyer l'ancien répertoire pour éviter les restes si on supprime des contacts
+				preferences.clear();
+				
+				int total = listeContacts.size();
+				preferences.putInt("total", total);
+				
+				for (int i = 0; i < total; i++) {
+					String cleNom = "n" + String(i);
+					String cleNumero = "num" + String(i);
+					
+					preferences.putString(cleNom.c_str(), listeContacts[i].nom);
+					preferences.putString(cleNumero.c_str(), listeContacts[i].numero);
+				}
+				
+				preferences.end();
+				Serial.println("[FLASH] Tous les contacts ont été sauvegardés !");
+			}
+
+			// --- FONCTION : Ajouter un nouveau contact ---
+			void ajouterNouveauContact(String nom, String numero) {
+				// Formatage basique (optionnel) : enlever les espaces
+				numero.replace(" ", "");
+				
+				Contact nouveau = {nom, numero};
+				listeContacts.push_back(nouveau);
+				
+				// Sauvegarde immédiate en Flash pour ne rien perdre
+				sauvegarderContactsEnFlash();
+			}
+
+			// --- FONCTION DE FILTRAGE : Vérifier si le numéro existe ---
+			bool estNumeroAutorise(String numeroEntrant) {
+				// Nettoyage du numéro entrant (enlever espaces et caractères parasites)
+				numeroEntrant.replace(" ", "");
+				
+				for (const auto& contact : listeContacts) {
+					// Comparaison : On vérifie si le numéro enregistré est inclus dans le numéro entrant 
+					// ou inversement (pour gérer les variantes avec ou sans +33 / 06)
+					if (numeroEntrant.indexOf(contact.numero) != -1 || contact.numero.indexOf(numeroEntrant) != -1) {
+						Serial.printf("[FILTRE] SMS Autorisé ! Expéditeur identifié : %s\n", contact.nom.c_str());
+						return true; 
+					}
+				}
+				
+				Serial.printf("[FILTRE] SMS Bloqué ! Numéro inconnu : %s\n", numeroEntrant.c_str());
+				return false;
+			}
+
+			void setup() {
+				Serial.begin(115200);
+				delay(1000);
+
+				// 1. Au démarrage, on charge les contacts existants
+				chargerContactsDepuisFlash();
+
+				// 2. Initialisation du premier contact (si la liste est vide au tout premier démarrage)
+				if (listeContacts.empty()) {
+					Serial.println("Premier démarrage détecté. Création du contact admin...");
+					ajouterNouveauContact("Mon Premier Contact", "+33612345678");
+				}
+
+				// --- EXEMPLE DE SIMULATION DE RÉCEPTION DE SMS ---
+				Serial.println("\n--- Simulation du filtrage des SMS ---");
+				
+				// Test 1 : Un numéro de la liste
+				String SMS_1_Provenance = "+33612345678";
+				if (estNumeroAutorise(SMS_1_Provenance)) {
+					// Exécuter l'action (prendre la photo, répondre...)
+				}
+
+				// Test 2 : Un numéro inconnu (spam ou intrus)
+				String SMS_2_Provenance = "+33699999999";
+				if (estNumeroAutorise(SMS_2_Provenance)) {
+					// Ne sera jamais exécuté
+				}
+			}
+
+			void loop() {
+				// Votre code de lecture du modem A7670E
+			}
+
+SD Card
+	- Stocker les niveaux des batteries
+
+	
+Caméra
+	- mettre les coordonnées GPS, date et heure dans les données EXIF.
+	- prendre une vidéo
+
+Date et heure
+	- Synchroniser avec l heure récupérée par la 4G, le wifi ou le GPS
+
+		
+		void MaJ_reveil_deep_sleep {
+			#include <Arduino.h>
+			#include <sys/time.h>
+			#include <time.h>
+
+			// Configuration de la durée de la veille (Exemple : 30 secondes)
+			#define TIME_TO_SLEEP_SEC  30        
+			#define uS_TO_S_FACTOR     1000000ULL
+
+			// ─── CRUCIAL : VARIABLE SAUVEGARDÉE PENDANT LE DEEP SLEEP ───
+			// L'attribut 'RTC_DATA_ATTR' place cette variable dans la mémoire RAM du RTC (8 Ko).
+			// Elle ne sera pas effacée pendant le sommeil de la carte.
+			RTC_DATA_ATTR time_t rtcTimestampSauvegarde = 0;
+
+			void afficherHeureSysteme(const char* prefixe);
+			void simulerSynchronisationGPS();
+
+			void setup() {
+			Serial.begin(115200);
+			delay(1000);
+			Serial.println("\n=============================================");
+			Serial.println("     TEST DE CONTINUITÉ TEMPORELLE RTC       ");
+			Serial.println("=============================================");
+
+			// 1. Détection de la cause du réveil de l'ESP32-S3
+			esp_sleep_wakeup_cause_t causeReveil = esp_sleep_get_wakeup_cause();
+
+			if (causeReveil == ESP_SLEEP_WAKEUP_TIMER) {
+				Serial.println("[⏰ RTC] Réveil provoqué par la minuterie.");
+				
+				// 2. RÉCUPÉRATION ET CORRECTION DE L'HEURE SYSTÈME
+				// On prend le timestamp qui a été figé juste avant le dodo
+				if (rtcTimestampSauvegarde > 0) {
+				
+				// On récupère le temps exact passé en sommeil mesuré par le RTC (converti en secondes)
+				time_t tempsPasseEnSommeil = esp_sleep_get_ext1_wakeup_status(); // Note: En interne, Espressif applique déjà le delta au démarrage
+				
+				// Pour forcer la synchronisation parfaite de l'OS avec le compteur matériel du RTC :
+				struct timeval tv;
+				tv.tv_sec = rtcTimestampSauvegarde + TIME_TO_SLEEP_SEC; // Heure de départ + durée exacte de la veille
+				tv.tv_usec = 0;
+				settimeofday(&tv, NULL);
+				
+				afficherHeureSysteme("Heure après réveil (corrigée)");
+				}
+			} 
+			else {
+				Serial.println("[⏰ RTC] Premier démarrage de la moto (Allumage initial).");
+				afficherHeureSysteme("Heure d'usine (Amnésique)");
+
+				// On simule une première synchronisation (ce que fera votre module GPS ou 4G dehors)
+				simulerSynchronisationGPS();
+			}
+
+			// 3. TRAITEMENT APPLICATIF (Le tracker travaille pendant 5 secondes)
+			Serial.println("Le tracker effectue ses mesures (GPS, Batterie, Capteurs)...");
+			delay(5000); 
+			afficherHeureSysteme("Heure après 5s de travail");
+
+			// 4. PRÉPARATION À L'ENTRÉE EN DEEP SLEEP
+			Serial.println("Préparation de la mise en veille...");
+			
+			// On enregistre l'heure actuelle exacte juste avant d'éteindre les cœurs principaux
+			time(&rtcTimestampSauvegarde); 
+			
+			// Configuration du réveil automatique par le RTC
+			esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP_SEC * uS_TO_S_FACTOR);
+			
+			Serial.printf("Entrée en Deep Sleep pour %d secondes. À tout de suite.\n", TIME_TO_SLEEP_SEC);
+			Serial.flush();
+			
+			// L'ESP32-S3 s'éteint ici
+			esp_deep_sleep_start();
+			}
+
+			void loop() {
+			// Vide sous FreeRTOS / Deep Sleep
+			}
+
+			// --- FONCTION DE FORMATAGE ET D'AFFICHAGE DE L'HEURE ---
+			void afficherHeureSysteme(const char* prefixe) {
+			time_t maintenant;
+			time(&maintenant);
+			struct tm *info = localtime(&maintenant);
+			
+			char bufferTemps[30];
+			strftime(bufferTemps, sizeof(bufferTemps), "%d/%m/%Y à %H:%M:%S", info);
+			
+			Serial.printf("[%s] -> %s (Timestamp: %ld)\n", prefixe, bufferTemps, maintenant);
+			}
+
+			// --- SIMULATION DU CAPTEUR GPS ---
+			void simulerSynchronisationGPS() {
+			Serial.println("[🛰️ GPS] Synchronisation fictive de l'heure satellite...");
+			
+			// Exemple de réglage manuel : 27 Août 2026 à 10:45:00
+			struct tm tempsFixe;
+			tempsFixe.tm_year = 2026 - 1900;
+			tempsFixe.tm_mon  = 8 - 1;
+			tempsFixe.tm_mday = 27;
+			tempsFixe.tm_hour = 10;
+			tempsFixe.tm_min  = 45;
+			tempsFixe.tm_sec  = 0;
+			tempsFixe.tm_isdst = -1;
+
+			struct timeval tv;
+			tv.tv_sec = mktime(&tempsFixe);
+			tv.tv_usec = 0;
+			
+			// Initialisation de l'horloge système
+			settimeofday(&tv, NULL);
+			afficherHeureSysteme("Heure synchronisée par le GPS");
+			}
+		}
+
+
+Wifi
+	- sychroniser la date heure
+	- consulter les fichiers de la carte SD
+
+Bluetooth
+	- Créer une application smartphone pour :
+		- mettre à jour le SSID et MdP Wifi
+		- demander une photo
+		- récupérer toutes les infos
+		- sychroniser la date heure
+		- animer les NeoPixels
+		- consulter les fichiers de la carte SD
+
+
+
+________________________________________________________________________________________________________________________________
+
+Display
+	-
+
+CAN bus sniffer
+	-
+
+Pilotage des feux
+	-
+
+NeoPixel 
+	- anneau autours du compteur
+
+Accéléromètre 
+	-
+
+Haut parleur
+	-
+
+Alarme
+	-
+
+Bip
+	-
+	
+FOTA
+	-
+
+
+
+
+
+/*********************************************************************/
+Pour estimer précisément la taille de la pile (Stack) d’une tâche FreeRTOS sur votre ESP32-S3 sans gaspiller la RAM ni risquer un Stack Overflow, 
+il existe deux approches (utilisation lors de la création de la tâche par xTaskCreatePinnedToCore()): 
+l’estimation théorique (au moment du codage) et la mesure dynamique (pendant l’exécution).
+
+1. L'Estimation Théorique (La règle de base)Sous l'architecture ESP32 (32-bits), chaque variable consomme une taille fixe sur la pile de la tâche :
+	Un pointeur (void*, char*, camera_fb_t*) ➡️ 4 octets
+	Un entier ou un float (int, float, uint32_t) ➡️ 4 octets
+	Un grand entier ou un double (uint64_t, double) ➡️ 8 octets
+	Un tableau de caractères (ex: char buffer[128]) ➡️ 128 octets
+	Un objet String Arduino ➡️ 16 octets minimum (+ la taille du texte allouée en dehors)
+	La règle d'or pour démarrer :
+		Calculez la somme de vos variables locales, ajoutez environ 2048 octets pour la "surcharge" de FreeRTOS (qui stocke le contexte des registres du processeur lors des changements de tâches et les fonctions système comme Serial.println), puis arrondissez à la puissance de 2 supérieure.
+		Petit module de calcul (ex: Gyroscope sans chaînes complexes) : 2048 (Base) + 256 (Variables) = ~2304 ➡️ Démarrez à 3072.Module lourd (ex: Traitement de fichiers sur carte SD ou calculs mathématiques complexes) : 2048 (Base) + 1024 (Buffers) = ~3072 ➡️ Démarrez à 4096.
+
+2. La Méthode Scientifique : La Mesure Dynamique (Recommandée)FreeRTOS intègre une fonction magique nommée uxTaskGetStackHighWaterMark(). Elle permet de demander en temps réel à une tâche : "Combien d'octets de pile te reste-t-il au minimum avant de saturer ?".Voici comment l'utiliser dans votre code pour ajuster parfaitement vos allocations :cppvoid tache_LectureGyro(void * pvParameters) {
+    while(1) {
+        // --- VOS CALCULS / TRAITEMENTS ICI ---
+        vTaskDelay(pdMS_TO_TICKS(500));
+
+        // --- CODE DE DIAGNOSTIC DE LA PILE ---
+        // Cette fonction renvoie le nombre d'octets (ou de mots de 4 octets selon la version, 
+        // mais sur l'ESP32 d'Espressif, elle renvoie directement des octets).
+        unsigned int espaceLibrePiles = uxTaskGetStackHighWaterMark(NULL);
+        
+        Serial.printf("📊 [DEBUG_STACK] Tâche Gyroscope -> Espace libre minimal : %u octets\n", espaceLibrePiles);
+    }
+}
+Utilisez le code avec précaution.
+Comment interpréter le résultat du diagnostic ?
+Laissez tourner votre programme et déclenchez tous les scénarios possibles (mouvements brusques, écritures SD, alertes). 
+Regardez la valeur affichée dans le terminal :
+	Si la valeur est proche de 0 (ex: 120 octets) : 
+	❌ Danger critique de Stack Overflow. 
+		Augmentez immédiatement la pile dans votre xTaskCreatePinnedToCore.
+	Si la valeur est très élevée (ex: 3100 octets libres sur 4096 alloués) : 
+	📉 Vous gaspillez de la RAM précieuse. 
+		Vous pouvez réduire la pile à 2048 ou 3072 en toute sécurité.
+	La cible idéale : Conservez une marge de sécurité confortable d'environ 500 à 1000 octets libres en fonctionnement maximal.
+	
+3. Les deux grands pièges à éviter sur l'ESP32-S3Ne créez jamais de gros tableaux locaux :
+Si vous écrivez char tampon[2048]; à l'intérieur d'une fonction de votre tâche, vous amputez instantanément la pile de 2048 octets. 
+Pour les gros tampons, utilisez l'allocation dynamique (mémoire Heap) avec malloc() ou déclarez-les en variables globales.
+Les fonctions de la famille printf et String sont gourmandes : Appeler des fonctions de traitement de texte complexes (comme le formatage de gros Serial.printf) ou manipuler de lourdes opérations sur les objets String consomme ponctuellement beaucoup d'espace sur la pile. 
+C’est pour cela qu’une base de 2048 octets est toujours requise.
+/*********************************************************************/
