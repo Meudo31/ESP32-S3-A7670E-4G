@@ -1,4 +1,5 @@
 // Test 4 : carte micro-SD en SDMMC 1 bit (CLK 5, CMD 4, D0 6, détection 46).
+// Sur la carte V2, GPIO 46 sert aussi au PCLK de la caméra : l'état de la détection n'est qu'indicatif.
 // OK si : la carte est montée, le fichier de test est écrit, relu à l'identique puis effacé.
 #include <Arduino.h>
 #include <FS.h>

@@ -9,6 +9,7 @@ Ils suivent le [plan de test](../docs/plan_de_test.md) : d'abord tout ce qui n'a
 | `test_batterie` | Jauge MAX17048 (I2C SDA 15 / SCL 16) | Adresse 0x36 trouvée, tension identique au multimètre |
 | `test_sd` | Carte micro-SD en SDMMC 1 bit (CLK 5, CMD 4, D0 6, CD 46) | Relecture OK, effacement OK |
 | `test_heure` | Heure système à travers un deep sleep de 20 s | Écart de l'ordre de la seconde à chaque réveil |
+| `test_modem_uart` | Dialogue AT avec le modem sur GPIO 17/18 (schéma V2), puis terminal AT | `AT` → OK, SIM `READY`, réseau enregistré |
 
 ## Utilisation
 

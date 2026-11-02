@@ -17,7 +17,7 @@ Principe : **un petit programme de test par fonctionnalité**, testé seul sur l
 | Liaison modem | Le README parle d'une liaison **USB** (`modem_usb.cpp`, classe `ModemUSB`) mais ce fichier n'existe **ni sur GitHub ni dans l'archive ESP32-Moto-main.zip** (dont le code est identique à GitHub). Le code utilise encore un UART, et `module_sms.h` définit `MODEM_RX_PIN` / `MODEM_TX_PIN` **vides** : `modemSerial.begin(...)` ne compile donc pas en l'état. Les GPIO 19/20 sont les broches USB D−/D+ de l'ESP32-S3, donc la liaison modem est à reconstruire (USB hôte ou UART, selon le schéma Waveshare). |
 | USB série | Le README impose `ARDUINO_USB_CDC_ON_BOOT=0`, mais `platformio.ini` contient `=1`. |
 | Carte SD | Le README parle de **SDMMC 1 bit** (CLK 5, CMD 4, D0 6), mais `main.cpp` appelle `SD.begin()` (mode SPI). |
-| Broches caméra | Le README dit qu'elles sont à vérifier pour la carte V2. |
+| Broches caméra | Celles de `main.h` sont fausses. Doc Waveshare V2 : XCLK 39, SIOD 15, SIOC 16 (même bus I2C que la jauge), Y2…Y9 = 7…14, VSYNC 42, HREF 41, PCLK 46 (partagé avec la détection SD), PWDN/RESET non câblés. |
 | Secrets | Ton `.gitignore` local (dans le zip) exclut bien `secrets.h`, mais celui de GitHub est un modèle C++ générique : `include/secrets.h` (Wi-Fi + 3 vrais numéros de téléphone) est **commité** ; il n'est pas dans `.gitignore` contrairement à ce que dit son commentaire. Le dépôt est privé, mais à corriger avant de le rendre public. |
 
 ## Les tests, dans l'ordre
@@ -37,7 +37,7 @@ Chaque étape s'appuie sur les précédentes. Colonne "OK si" = ce que tu dois v
 ### Bloc 2 : le modem A7670E (avec carte SIM, PIN désactivé)
 | # | Fonction | OK si |
 |---|---|---|
-| 6 | Communication AT | `AT` → `OK`, `ATI` donne le modèle et le firmware |
+| 6 | Communication AT (`test_modem_uart`, GPIO 17/18 d'après le schéma V2) | `AT` → `OK`, `ATI` donne le modèle et le firmware |
 | 7 | SIM et réseau | `AT+CPIN?` → `READY`, `AT+CSQ` > 10, `AT+CEREG?` enregistré, nom de l'opérateur |
 | 8 | Heure réseau | `AT+CCLK?` donne la bonne date/heure, recopiée dans l'heure système |
 | 9 | Envoi SMS | Tu reçois un SMS de test |
