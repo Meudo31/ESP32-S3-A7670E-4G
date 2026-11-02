@@ -5,6 +5,9 @@
 #define SECRET_WIFI_SSID      "Moto_ESP32"
 #define SECRET_WIFI_PASSWORD  "CHANGE_MOI_12345"
 
+// Code PIN Bluetooth (6 chiffres) demandé par le téléphone lors du premier appairage avec l'application Android
+#define SECRET_BLE_PIN   123456
+
 // Répertoire téléphonique autorisé à piloter la moto par SMS
 #define SECRET_TEL_SIM   "+33600000000"
 #define SECRET_TEL_MOI   "+33600000001"

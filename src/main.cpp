@@ -11,7 +11,7 @@
 #include "module_sms.h"
 #include "module_logs.h"
 #include "module_wifi.h"
-#include "module_bluetooth.h"
+#include "module_appli.h"         // Bluetooth : application Android (remplace module_bluetooth.h)
 #include "module_test_micro.h"
 // #include "module_micro.h"
 // #include "module_hautParleur.h"
@@ -100,7 +100,7 @@ void setup() {
     verifierInit(initialisationNeopixelIntegree(),  "NeoPixel");
     verifierInit(initialiserNeopixelPanneau(),      "Panneau NeoPixel");
     verifierInit(initialiserWifi(),                 "Wi-Fi");
-    verifierInit(initialiserBluetooth(),            "Bluetooth");
+    verifierInit(initialiserAppliBLE(),             "Bluetooth (appli Android)");
     verifierInit(initialiserTestMicrophone(),       "Micro (test)");
     // verifierInit(initialiserHautParleur(),     "Haut-parleur");
 

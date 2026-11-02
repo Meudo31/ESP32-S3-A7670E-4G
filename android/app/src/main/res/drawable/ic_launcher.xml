@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Icône simple : un compteur de vitesse -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path android:fillColor="#1F2937" android:pathData="M0,0h24v24h-24z" />
+    <path android:fillColor="#F59E0B"
+        android:pathData="M12,4C6.5,4 2,8.5 2,14c0,1.9 0.5,3.6 1.4,5.1l1.7,-1C4.4,16.9 4,15.5 4,14c0,-4.4 3.6,-8 8,-8s8,3.6 8,8c0,1.5 -0.4,2.9 -1.1,4.1l1.7,1C21.5,17.6 22,15.9 22,14C22,8.5 17.5,4 12,4z" />
+    <path android:fillColor="#F59E0B"
+        android:pathData="M10.6,15.4c0.8,0.8 2,0.8 2.8,0l5.1,-7.6l-7.6,5.1C10.1,13.6 10.1,14.6 10.6,15.4z" />
+</vector>

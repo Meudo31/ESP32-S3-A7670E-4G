@@ -17,7 +17,7 @@ Il suit la position de la moto, la photographie, lit les données du bus CAN et 
 - **Lecture du bus CAN** de la moto (frein, ABS, embrayage, béquille, feux…)
 - **Accéléromètre** ADXL345 avec interruption de mouvement
 - **Point d'accès Wi-Fi** avec page web de données et serveur FTP pour la carte SD
-- **Bluetooth Low Energy** pour consulter les logs depuis un smartphone
+- **Application Android** en Bluetooth Low Energy : données en direct, commandes, logs et mise à jour du firmware (voir [`android/`](android/README.md) et [`docs/protocole_ble.md`](docs/protocole_ble.md))
 - **Journalisation** sur le port série et sur la carte SD
 - **Jauge de batterie** MAX17048
 - **LED RGB** WS2812B d'état
