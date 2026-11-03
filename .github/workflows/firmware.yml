@@ -18,6 +18,8 @@ on:
 jobs:
   compilation:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # pour mettre firmware.bin dans la release « firmware-test »
     steps:
       - uses: actions/checkout@v4
 
@@ -46,3 +48,15 @@ jobs:
         with:
           name: firmware-esp32
           path: .pio/build/esp32-s3-devkitc-1/firmware.bin
+
+      # Lien direct, sans zip et sans compte GitHub (compilé avec le code PIN d'exemple 123456) :
+      # https://github.com/Meudo31/ESP32-S3-A7670E-4G/releases/download/firmware-test/firmware.bin
+      - name: Mettre firmware.bin dans la release « firmware-test »
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view firmware-test >/dev/null 2>&1 || gh release create firmware-test --prerelease \
+            --target "$GITHUB_SHA" --title "Firmware ESP32 (dernière version de test)" --notes "Firmware de test."
+          gh release upload firmware-test .pio/build/esp32-s3-devkitc-1/firmware.bin --clobber
+          gh release edit firmware-test --notes "Firmware compilé depuis la branche ${GITHUB_REF_NAME}, commit ${GITHUB_SHA::7}, le $(date -u '+%d/%m/%Y à %H:%M') UTC. Code PIN Bluetooth : 123456 (celui de include/secrets.example.h)."
