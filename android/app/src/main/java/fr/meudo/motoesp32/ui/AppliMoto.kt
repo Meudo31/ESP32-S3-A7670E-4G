@@ -133,7 +133,8 @@ fun AppliMoto(
         gesturesEnabled = connecte,
         drawerContent = {
             ModalDrawerSheet {
-                Text("Moto ESP32", Modifier.padding(16.dp), style = MaterialTheme.typography.titleLarge)
+                Text("Moto ESP32", Modifier.padding(start = 16.dp, top = 16.dp), style = MaterialTheme.typography.titleLarge)
+                Text("Appli ${versionDeLAppli()}", Modifier.padding(start = 16.dp, bottom = 12.dp), style = MaterialTheme.typography.bodySmall)
                 Ecran.entries.forEach { e ->
                     NavigationDrawerItem(
                         label = { Text(e.titre) },
@@ -244,6 +245,7 @@ private fun EcranConnexion(modifier: Modifier, viewModel: MotoViewModel, activer
     val dernier = viewModel.dernierModule
 
     LazyColumn(modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item { Text("Version de l'appli : ${versionDeLAppli()}", style = MaterialTheme.typography.bodySmall) }
         if (ota == EtatOta.Termine) {
             item {
                 Carte("Mise à jour réussie") {
@@ -309,3 +311,12 @@ private fun EcranConnexion(modifier: Modifier, viewModel: MotoViewModel, activer
     }
 }
 
+
+/** Version de l'application installée (versionName dans app/build.gradle.kts). */
+@Composable
+private fun versionDeLAppli(): String {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    return remember {
+        try { context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "?" } catch (e: Exception) { "?" }
+    }
+}

@@ -4,6 +4,7 @@
 #include <BLE2902.h>
 #include <BLESecurity.h>
 #include <esp_gap_ble_api.h>
+#include <esp_bt.h>
 
 #include "configuration.h"
 #include "module_appli.h"
@@ -396,9 +397,10 @@ class RappelsDuServeur : public BLEServerCallbacks {
         telephoneConnecte      = true;
         telephoneAuthentifie   = false;
         identifiantDeConnexion = parametres->connect.conn_id;
-        // Paramètres de liaison plus tolérants : intervalle 15 à 30 ms, et la liaison n'est déclarée perdue
-        // qu'après 6 s sans échange (au lieu de quelques centaines de ms avec certains téléphones).
-        serveur->updateConnParams(parametres->connect.remote_bda, 12, 24, 0, 600);
+        // Paramètres de liaison tolérants : intervalle 15 à 30 ms, et la liaison n'est déclarée perdue
+        // qu'après 20 s sans aucun échange (au lieu de 5 s par défaut) : une perturbation radio passagère
+        // (émission 4G du modem, Wi-Fi du téléphone, moto entre les deux) ne coupe plus la liaison.
+        serveur->updateConnParams(parametres->connect.remote_bda, 12, 24, 0, 2000);
         // Demande le chiffrement : le téléphone affiche la saisie du code PIN s'il n'est pas encore appairé.
         esp_ble_set_encryption(parametres->connect.remote_bda, ESP_BLE_SEC_ENCRYPT_MITM);
         Serial.println("[APPLI] Téléphone connecté, authentification...");
@@ -474,6 +476,11 @@ BLECharacteristic* creerUneCaracteristique(BLEService* service, const char* uuid
 void preparerLeBluetooth() {
     BLEDevice::init(NOM_BLUETOOTH_DU_MODULE);
     BLEDevice::setMTU(517);
+    // Puissance d'émission maximale de l'ESP32-S3 (+18 dBm au lieu de +9 dBm) : meilleure portée,
+    // et la liaison résiste mieux au modem 4G tout proche.
+    esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_DEFAULT, ESP_PWR_LVL_P18);
+    esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, ESP_PWR_LVL_P18);
+    esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_SCAN, ESP_PWR_LVL_P18);
 
     BLEDevice::setEncryptionLevel(ESP_BLE_SEC_ENCRYPT_MITM);
     BLEDevice::setSecurityCallbacks(new RappelsDeSecurite());
