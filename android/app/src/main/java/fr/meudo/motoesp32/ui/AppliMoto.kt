@@ -112,6 +112,17 @@ fun AppliMoto(
         }
     }
 
+    // À l'ouverture de l'appli, on se reconnecte tout seul au dernier module utilisé.
+    LaunchedEffect(permissionsAccordees) {
+        val dernier = viewModel.dernierModule
+        if (permissionsAccordees && dernier != null && client.bluetoothActif && etat == EtatConnexion.Deconnecte
+            && !viewModel.connexionAutomatiqueFaite
+        ) {
+            viewModel.connexionAutomatiqueFaite = true   // une seule fois : pas après un « Déconnecter » volontaire
+            viewModel.connecter(dernier)
+        }
+    }
+
     // Pendant une reconnexion automatique, on garde les écrans et les dernières données affichées.
     val enReconnexion = etat is EtatConnexion.Reconnexion
     val connecte = etat == EtatConnexion.Connecte || enReconnexion

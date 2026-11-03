@@ -519,6 +519,7 @@ void tacheAppli(void*) {
     static CommandeRecue commande;
     static LigneDuJournalPourLAppli ligne;
     uint32_t dernierGPS = 0, derniereBatterie = 0, dernierReseau = 0, dernierSysteme = 0, dernierEnvoiLent = 0;
+    uint32_t derniereRelanceDeLAnnonce = 0;
     bool etaitAuthentifie = false;
 
     for (;;) {
@@ -530,6 +531,13 @@ void tacheAppli(void*) {
             envoyerToutLEtat();
         }
         etaitAuthentifie = authentifie;
+
+        // Sans téléphone connecté, on relance l'annonce Bluetooth toutes les 30 s par sécurité :
+        // le module reste toujours visible pour que l'appli puisse se reconnecter toute seule.
+        if (!telephoneConnecte && millis() - derniereRelanceDeLAnnonce >= 30 * UNE_SECONDE_MS) {
+            derniereRelanceDeLAnnonce = millis();
+            BLEDevice::startAdvertising();
+        }
 
         if (authentifie && !miseAJourEnCours()) {
             const uint32_t maintenant = millis();

@@ -19,6 +19,9 @@ class MotoViewModel(application: Application) : AndroidViewModel(application) {
     /** Adresse du dernier module utilisé, pour se reconnecter d'un geste. */
     val dernierModule: String? get() = preferences.getString("dernier_module", null)
 
+    /** Vrai une fois la connexion automatique du démarrage tentée (elle survit à la rotation de l'écran). */
+    var connexionAutomatiqueFaite = false
+
     fun connecter(adresse: String) {
         preferences.edit().putString("dernier_module", adresse).apply()
         client.connecter(adresse)

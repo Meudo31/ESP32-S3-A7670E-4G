@@ -142,11 +142,30 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
     private var arretRecherche: Job? = null
 
     // Reconnexion automatique : tant que l'utilisateur n'a pas appuyé sur « Déconnecter »,
-    // une liaison perdue (module trop loin, redémarrage, mise à jour) est reprise toute seule.
+    // une liaison perdue (module trop loin, éteint, redémarrage, mise à jour, Bluetooth du téléphone
+    // coupé puis rallumé) est reprise toute seule, sans limite de temps.
     private var adresseDuModule: String? = null
-    private var dejaConnecte = false
     private var tentativesDeReconnexion = 0
     private var reconnexion: Job? = null
+
+    /** Rallume la reconnexion quand le Bluetooth du téléphone est réactivé. */
+    private val surveillanceDuBluetooth = object : BroadcastReceiver() {
+        override fun onReceive(c: Context, intent: Intent) {
+            if (intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, -1) == BluetoothAdapter.STATE_ON
+                && adresseDuModule != null && gatt == null
+            ) {
+                tentativesDeReconnexion = 0
+                planifierLaReconnexion()
+            }
+        }
+    }
+
+    init {
+        ContextCompat.registerReceiver(
+            context, surveillanceDuBluetooth, IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+    }
     private val formatHeure = SimpleDateFormat("HH:mm:ss", Locale.FRANCE)
 
     // ─────────────────────────────── Recherche ───────────────────────────────
@@ -197,7 +216,6 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
         arreterLaReconnexion()
         fermer()
         adresseDuModule = adresse
-        dejaConnecte = false
         _etat.value = EtatConnexion.Connexion("Connexion…")
         if (!ouvrirLaLiaison(adresse)) _etat.value = EtatConnexion.Erreur("Adresse invalide")
     }
@@ -209,25 +227,40 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
         _etat.value = EtatConnexion.Deconnecte
     }
 
-    private fun ouvrirLaLiaison(adresse: String): Boolean {
+    /**
+     * [enAttente] = connexion « patiente » d'Android : elle attend que le module réapparaisse (hors de portée,
+     * éteint, en train de redémarrer) sans délai maximum, au lieu d'abandonner au bout de 30 s.
+     */
+    private fun ouvrirLaLiaison(adresse: String, enAttente: Boolean = false): Boolean {
         val appareil = try { adaptateur?.getRemoteDevice(adresse) } catch (e: IllegalArgumentException) { null }
             ?: return false
-        gatt = appareil.connectGatt(context, false, rappelGatt, BluetoothDevice.TRANSPORT_LE)
+        gatt = appareil.connectGatt(context, enAttente, rappelGatt, BluetoothDevice.TRANSPORT_LE)
         return true
     }
 
-    /** Vrai si la liaison perdue doit être reprise toute seule. */
-    private fun reconnexionPossible(): Boolean = adresseDuModule != null && dejaConnecte && bluetoothActif
+    /** Vrai si la liaison perdue doit être reprise toute seule (l'utilisateur n'a pas appuyé sur « Déconnecter »). */
+    private fun reconnexionPossible(): Boolean = adresseDuModule != null
 
-    /** Réessaie après 2 s, puis 4 s, 6 s... jusqu'à 15 s entre deux essais, sans limite. */
+    /**
+     * Relance la connexion après 1 s, 2 s, 4 s... puis toutes les 15 s, sans limite.
+     * Chaque essai attend le module jusqu'à 60 s ; s'il ne répond pas, on ferme et on recommence
+     * (certains téléphones restent bloqués sinon).
+     */
     private fun planifierLaReconnexion() {
         val adresse = adresseDuModule ?: return
         reconnexion?.cancel()
         tentativesDeReconnexion++
         _etat.value = EtatConnexion.Reconnexion(tentativesDeReconnexion)
         reconnexion = scope.launch {
-            delay(minOf(2_000L * tentativesDeReconnexion, 15_000L))
-            if (adresseDuModule == adresse && gatt == null) ouvrirLaLiaison(adresse)
+            delay(minOf(1_000L shl minOf(tentativesDeReconnexion - 1, 4), 15_000L))
+            if (adresseDuModule != adresse || gatt != null) return@launch
+            if (!bluetoothActif) return@launch   // la surveillance du Bluetooth relancera dès qu'il sera rallumé
+            ouvrirLaLiaison(adresse, enAttente = true)
+            delay(60_000)
+            if (adresseDuModule == adresse && _etat.value is EtatConnexion.Reconnexion) {
+                fermer()
+                planifierLaReconnexion()
+            }
         }
     }
 
@@ -272,14 +305,14 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
         g.discoverServices()
         val statutServices = withTimeoutOrNull(10_000) { attenteServices?.await() }
         if (statutServices != BluetoothGatt.GATT_SUCCESS || g.getService(Protocole.SERVICE) == null) {
-            echec("Ce module n'a pas le service de l'application (firmware à jour ?)")
+            echec("Ce module n'a pas le service de l'application (firmware à jour ?)", definitif = true)
             return
         }
 
         if (g.device.bondState != BluetoothDevice.BOND_BONDED) {
             _etat.value = EtatConnexion.Connexion("Appairage : saisissez le code PIN du module")
             if (!attendreAppairage(g.device)) {
-                echec("Appairage refusé ou code PIN incorrect")
+                echec("Appairage refusé ou code PIN incorrect", definitif = true)
                 return
             }
         }
@@ -292,7 +325,7 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
             }
         }
         _etat.value = EtatConnexion.Connecte
-        dejaConnecte = true
+        reconnexion?.cancel()
         tentativesDeReconnexion = 0
         // Le téléphone donne l'heure au module (utile tant que le GPS et le réseau ne l'ont pas fait).
         envoyerCommande("HEURE ${System.currentTimeMillis() / 1000}")
@@ -331,8 +364,13 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
         }
     }
 
-    private fun echec(message: String) {
+    /** [definitif] : erreur qu'un nouvel essai ne réglera pas (code PIN refusé...) : on arrête de réessayer. */
+    private fun echec(message: String, definitif: Boolean = false) {
         fermer()
+        if (definitif) {
+            adresseDuModule = null
+            arreterLaReconnexion()
+        }
         if (reconnexionPossible()) planifierLaReconnexion() else _etat.value = EtatConnexion.Erreur(message)
     }
 
@@ -578,8 +616,9 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
         override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
             if (g != gatt) return
             if (newState == BluetoothProfile.STATE_CONNECTED && status == BluetoothGatt.GATT_SUCCESS) {
+                reconnexion?.cancel()   // l'essai a abouti : plus besoin du délai de 60 s
                 preparation = scope.launch { preparer(g) }
-            } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+            } else if (newState == BluetoothProfile.STATE_DISCONNECTED || status != BluetoothGatt.GATT_SUCCESS) {
                 val enMiseAJour = _ota.value is EtatOta.EnCours
                 val finOtaReussie = _ota.value == EtatOta.Termine
                 g.close()
@@ -632,7 +671,10 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
     }
 
     fun liberer() {
+        adresseDuModule = null
+        arreterLaReconnexion()
         arreterRecherche()
         fermer()
+        try { context.unregisterReceiver(surveillanceDuBluetooth) } catch (_: Exception) { }
     }
 }
