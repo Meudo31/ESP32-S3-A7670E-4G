@@ -19,7 +19,7 @@ uint32_t      numeroDePhotoSansDate = 0;
 
 bool lesBrochesSontLibres() {
     if (brochesDeLaCarte().cameraHREF == BROCHE_BANDE_NEOPIXELS) {
-        etatActuel = "désactivée : GPIO 41 est utilisé par la bande NeoPixel (déplacer la bande sur un GPIO libre, ex. 40)";
+        etatActuel = "désactivée : la bande NeoPixel est sur la broche HREF de la caméra (déplacer la bande sur un GPIO libre)";
         return false;
     }
     return true;

@@ -16,7 +16,7 @@
 #define NOM_DU_MODULE_DANS_LES_FICHIERS "ESP32-A7670"
 
 // ─── Broches ajoutées par Meudo (identiques sur V1 et V2) ───
-#define BROCHE_BANDE_NEOPIXELS          41      // bande de 14 LED WS2812B
+#define BROCHE_BANDE_NEOPIXELS          40      // bande de 14 LED WS2812B (pas 41 : la caméra de la V2 l'utilise)
 #define NOMBRE_DE_LED_DE_LA_BANDE       14
 #define BROCHE_BOUTON_ANIMATIONS        21      // bouton entre la broche et la masse (GND)
 
