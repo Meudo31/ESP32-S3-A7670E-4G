@@ -115,6 +115,19 @@ fun AppliMoto(
     // Pendant une reconnexion automatique, on garde les écrans et les dernières données affichées.
     val enReconnexion = etat is EtatConnexion.Reconnexion
     val connecte = etat == EtatConnexion.Connecte || enReconnexion
+
+    // Si le compteur de démarrages du module augmente pendant qu'on l'utilise, c'est qu'il a redémarré tout seul
+    // (coupure d'alimentation, plantage) : on le dit, avec la raison, pour comprendre les déconnexions.
+    var demarragesConnus by remember { mutableStateOf<Long?>(null) }
+    val systeme = etatModule.systeme
+    LaunchedEffect(systeme?.nombreDeDemarrages) {
+        val demarrages = systeme?.nombreDeDemarrages ?: return@LaunchedEffect
+        val avant = demarragesConnus
+        demarragesConnus = demarrages
+        if (avant != null && demarrages > avant) {
+            snackbar.showSnackbar("⚠️ Le module a redémarré tout seul (${systeme.raisonRedemarrage})")
+        }
+    }
     ModalNavigationDrawer(
         drawerState = tiroir,
         gesturesEnabled = connecte,
