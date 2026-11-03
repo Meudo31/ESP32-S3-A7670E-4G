@@ -14,6 +14,8 @@ on:
 jobs:
   apk:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # pour mettre l'APK dans la release « appli-test »
     defaults:
       run:
         working-directory: android
@@ -35,3 +37,16 @@ jobs:
         with:
           name: MotoESP32-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
+
+      # Lien direct, sans zip et sans compte GitHub :
+      # https://github.com/Meudo31/ESP32-S3-A7670E-4G/releases/download/appli-test/MotoESP32.apk
+      - name: Mettre l'APK dans la release « appli-test »
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk MotoESP32.apk
+          gh release view appli-test >/dev/null 2>&1 || gh release create appli-test --prerelease \
+            --target "$GITHUB_SHA" --title "Appli Android (dernière version de test)" --notes "APK de test."
+          gh release upload appli-test MotoESP32.apk --clobber
+          gh release edit appli-test --notes "APK compilé depuis la branche ${GITHUB_REF_NAME}, commit ${GITHUB_SHA::7}, le $(date -u '+%d/%m/%Y à %H:%M') UTC."
