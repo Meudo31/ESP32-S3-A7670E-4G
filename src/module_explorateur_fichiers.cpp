@@ -172,6 +172,30 @@ struct ReceptionDUnFichier {
 ReceptionDUnFichier reception;
 SemaphoreHandle_t   verrouDeLaReception = nullptr;
 
+// Les morceaux arrivent dans la tâche du Bluetooth, qui a très peu de pile : on ne les écrit pas sur la
+// carte SD depuis là (c'est ce qui faisait planter le module), on les confie à une tâche dédiée.
+struct MorceauRecu {
+    uint16_t taille;
+    uint8_t  octets[520];   // un morceau fait au plus MTU − 3 = 514 octets
+};
+QueueHandle_t      fileDesMorceaux = nullptr;
+volatile int       morceauxEnAttente = 0;
+portMUX_TYPE       verrouDuCompteur = portMUX_INITIALIZER_UNLOCKED;
+const uint32_t     ATTENTE_MAXIMUM_POUR_DEPOSER_UN_MORCEAU_MS = 3000;
+
+void compterUnMorceau(int variation) {
+    portENTER_CRITICAL(&verrouDuCompteur);
+    morceauxEnAttente += variation;
+    portEXIT_CRITICAL(&verrouDuCompteur);
+}
+
+void viderLaFileDesMorceaux() {
+    xQueueReset(fileDesMorceaux);
+    portENTER_CRITICAL(&verrouDuCompteur);
+    morceauxEnAttente = 0;
+    portEXIT_CRITICAL(&verrouDuCompteur);
+}
+
 bool viderLeTamponSurLaCarte() {
     if (reception.remplissage == 0) return true;
     bool reussi = false;
@@ -265,6 +289,7 @@ bool commencerLaReceptionDUnFichier(const String& chemin, uint32_t taille, Strin
         compteRendu = "Plus assez de place sur la carte SD";
         return false;
     }
+    viderLaFileDesMorceaux();
     xSemaphoreTake(verrouDeLaReception, portMAX_DELAY);
     if (reception.enCours) oublierLaReception(true);
     reception.tampon = (uint8_t*)malloc(TAILLE_DU_TAMPON_DE_RECEPTION);
@@ -287,7 +312,8 @@ bool commencerLaReceptionDUnFichier(const String& chemin, uint32_t taille, Strin
     return fichierCree;
 }
 
-void recevoirUnMorceauDuTelephone(const uint8_t* octets, size_t taille) {
+// Tâche « Réception » : écrit sur la carte SD les morceaux déposés par le Bluetooth.
+static void ajouterUnMorceauAuFichier(const uint8_t* octets, size_t taille) {
     xSemaphoreTake(verrouDeLaReception, portMAX_DELAY);
     if (reception.enCours && !reception.erreurDEcriture) {
         if (reception.octetsRecus + taille > reception.tailleAttendue) {
@@ -312,7 +338,33 @@ void recevoirUnMorceauDuTelephone(const uint8_t* octets, size_t taille) {
     xSemaphoreGive(verrouDeLaReception);
 }
 
+static void tacheReceptionDeFichiers(void*) {
+    static MorceauRecu morceau;
+    for (;;) {
+        if (xQueueReceive(fileDesMorceaux, &morceau, portMAX_DELAY) != pdPASS) continue;
+        ajouterUnMorceauAuFichier(morceau.octets, morceau.taille);
+        compterUnMorceau(-1);
+    }
+}
+
+// Appelé par le Bluetooth : dépose le morceau dans la file, sans toucher à la carte SD.
+// Si la file est pleine, on attend un peu : le téléphone attend l'accusé de réception, il ralentit donc tout seul.
+void recevoirUnMorceauDuTelephone(const uint8_t* octets, size_t taille) {
+    static MorceauRecu morceau;   // statique : surtout pas 520 octets sur la petite pile du Bluetooth
+    if (fileDesMorceaux == nullptr || !reception.enCours || taille == 0) return;
+    morceau.taille = min(taille, sizeof(morceau.octets));
+    memcpy(morceau.octets, octets, morceau.taille);
+    compterUnMorceau(+1);
+    if (xQueueSend(fileDesMorceaux, &morceau, pdMS_TO_TICKS(ATTENTE_MAXIMUM_POUR_DEPOSER_UN_MORCEAU_MS)) != pdPASS) {
+        compterUnMorceau(-1);
+        reception.erreurDEcriture = true;
+    }
+}
+
 bool terminerLaReceptionDUnFichier(uint32_t crcAttendu, String& compteRendu) {
+    // On attend que la tâche « Réception » ait écrit tous les morceaux encore dans la file.
+    const uint32_t debut = millis();
+    while (morceauxEnAttente > 0 && millis() - debut < 10 * UNE_SECONDE_MS) vTaskDelay(pdMS_TO_TICKS(20));
     xSemaphoreTake(verrouDeLaReception, portMAX_DELAY);
     bool reussi = false;
     if (!reception.enCours) {
@@ -336,6 +388,7 @@ bool terminerLaReceptionDUnFichier(uint32_t crcAttendu, String& compteRendu) {
 
 void annulerLaReceptionDUnFichier() {
     if (verrouDeLaReception == nullptr) return;
+    viderLaFileDesMorceaux();
     xSemaphoreTake(verrouDeLaReception, portMAX_DELAY);
     if (reception.enCours) {
         ecrireDansLeJournal("[FICHIERS] Réception de %s annulée.", reception.cheminFinal.c_str());
@@ -347,6 +400,8 @@ void annulerLaReceptionDUnFichier() {
 bool demarrerModuleExplorateurFichiers() {
     fileDesDemandes = xQueueCreate(4, sizeof(DemandeSurLesFichiers));
     verrouDeLaReception = xSemaphoreCreateMutex();
-    if (fileDesDemandes == nullptr || verrouDeLaReception == nullptr) return false;
+    fileDesMorceaux     = xQueueCreate(16, sizeof(MorceauRecu));   // 16 morceaux ≈ 8 Ko d'avance
+    if (fileDesDemandes == nullptr || verrouDeLaReception == nullptr || fileDesMorceaux == nullptr) return false;
+    if (!creerTacheSurveillee(tacheReceptionDeFichiers, "Reception", 6144, PRIORITE_NORMALE, COEUR_TRAITEMENTS)) return false;
     return creerTacheSurveillee(tacheExplorateurFichiers, "Fichiers", 6144, PRIORITE_BASSE, COEUR_TRAITEMENTS, &tacheExplorateur);
 }
