@@ -1,46 +1,45 @@
-#ifndef CONFIG_BATTERIE_H
-#define CONFIG_BATTERIE_H
+#ifndef MODULE_BATTERIE_H
+#define MODULE_BATTERIE_H
 
-#include <Adafruit_MAX1704X.h>
+/* ══════════════════════════════════════════════════════════════════════════════
+   MODULE BATTERIE ET ALIMENTATION
+   - Jauge MAX17048 (I2C) : tension de la batterie 18650, pourcentage de charge,
+     vitesse de charge ou de décharge (%/heure), alertes.
+   - Source d'alimentation : la carte ne relie aucune broche aux entrées USB et
+     12 V. Sans câblage supplémentaire, on la DÉDUIT de la jauge (« en charge » =
+     alimentation externe présente). Pour savoir exactement si le 12 V ou l'USB
+     est présent, câbler un pont diviseur et renseigner BROCHE_MESURE_12V /
+     BROCHE_MESURE_USB dans configuration.h.
+   - Tension de la batterie vue par le modem (AT+CBC), en complément.
+   La tâche lit tout cela toutes les 5 secondes.
+   ══════════════════════════════════════════════════════════════════════════════ */
 
-#include "main.h"
+#include <Arduino.h>
+#include <ArduinoJson.h>
 
+enum class SourceDAlimentation : uint8_t { INCONNUE, BATTERIE, EXTERNE, USB, ENTREE_12V, USB_ET_12V };
 
-// -->>  Broches de la carte Waveshare ESP32-S3 A7670E ***********************************************
-// Broches du bus I2C pour la jauge de batterie MAX17048 (Version V2 de la carte)
-#define I2C_SDA_PIN      15
-#define I2C_SCL_PIN      16
+struct EtatDeLaBatterie {
+    bool   jaugePresente;
+    float  tensionVolts;
+    float  chargePourcent;
+    float  variationPourcentParHeure;   // > 0 : en charge, < 0 : en décharge
+    bool   enCharge;
+    bool   pleine;
+    uint8_t alertes;                    // bits de la jauge (tension basse, haute, charge basse...)
+    float  tension12V;                  // 0 si non câblée
+    float  tensionUSB;                  // 0 si non câblée
+    SourceDAlimentation source;
+    float  autonomieHeures;             // estimation en décharge, -1 si inconnue
+    uint16_t versionDeLaJauge;
+};
 
+EtatDeLaBatterie etatDeLaBatterie();
+const char* nomDeLaSourceDAlimentation(SourceDAlimentation source);
 
-// -------------------------------------------------------------------------------------- //
-// ----------- Déclarations des outils de synchronisation globaux. ---------------------- //
-// -------------------------------------------------------------------------------------- //
-// -->> Constantes  ***********************************************
+void decrireLaBatterie(JsonDocument& document);
 
-// -->> Structure de données partagée entre le (Cœur 1) et le (Cœur 0)  ***********************************************
+// À appeler après la détection de la carte (les broches I2C dépendent de la version).
+bool demarrerModuleBatterie();
 
-// -->> Variables globales  ***********************************************
-bool initialisationJaugeBatterie();
-extern Adafruit_MAX17048 jaugeBatterie;
-
-// -->> Fonctions utilisées dans le module_GPS.cpp  ***********************************************
-
-
-
-// -------------------------------------------------------------------------------------- //
-// ---------------------- Déclarations des outils Free RTOS. ---------------------------- //
-// -------------------------------------------------------------------------------------- //
-// -->> Mutex permet de bloquer la lecture de la donnée pendant sa mise à jour  ***********************************************
-
-// -->> Queue permet d'attendre la prochaine mis à jour  ***********************************************
-
-// -->> Handle global pour pouvoir déclencher cette tâche depuis l'extérieur (ex: depuis le Cœur 0 par SMS)  ***********************************************
-
-// -->> Déclaration des tâches FreeRTOS  ***********************************************
-void taskBatterieESP32AfficheInfos(void * pvParameters);
-
-
-#endif // CONFIG_BATTERIE_H
-
-
-
+#endif // MODULE_BATTERIE_H

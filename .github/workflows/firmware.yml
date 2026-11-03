@@ -1,0 +1,48 @@
+name: Firmware ESP32
+
+on:
+  push:
+    paths:
+      - "src/**"
+      - "include/**"
+      - "platformio.ini"
+      - ".github/workflows/firmware.yml"
+  pull_request:
+    paths:
+      - "src/**"
+      - "include/**"
+      - "platformio.ini"
+      - ".github/workflows/firmware.yml"
+  workflow_dispatch:
+
+jobs:
+  compilation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-${{ hashFiles('platformio.ini') }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installation de PlatformIO
+        run: pip install --upgrade platformio
+
+      - name: Code PIN Bluetooth de test (secrets.h n'est pas dans le dépôt)
+        run: cp include/secrets.example.h include/secrets.h
+
+      - name: Compilation
+        run: pio run
+
+      - name: Publier firmware.bin (pour la mise à jour par l'application)
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-esp32
+          path: .pio/build/esp32-s3-devkitc-1/firmware.bin

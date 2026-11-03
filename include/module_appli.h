@@ -1,46 +1,54 @@
-#ifndef CONFIG_APPLI_H
-#define CONFIG_APPLI_H
+#ifndef MODULE_APPLI_H
+#define MODULE_APPLI_H
 
-#include "main.h"
-
-/* ──────────────────────────────────────────────────────────────────────────────
-   Module « Appli » : liaison Bluetooth Low Energy avec l'application Android.
-
-   Ce module remplace module_bluetooth.cpp (un seul serveur BLE possible sur l'ESP32).
-   Il offre, dans un seul service GATT protégé par code PIN :
-     - les données en direct (GPS, batterie, 4G, bus CAN, accéléromètre, système) ;
-     - les commandes (photo, position GPS, redémarrage...) et leurs réponses ;
-     - les logs en direct ;
-     - la mise à jour du firmware (OTA) en Bluetooth.
-
+/* ══════════════════════════════════════════════════════════════════════════════
+   MODULE APPLI : liaison Bluetooth Low Energy avec l'application Android.
+   Un seul service, protégé par un code PIN (SECRET_BLE_PIN dans include/secrets.h).
    Le protocole complet est décrit dans docs/protocole_ble.md.
-   ────────────────────────────────────────────────────────────────────────────── */
 
-// Version affichée dans l'application. À incrémenter à chaque nouveau firmware.
-#define APPLI_VERSION_FIRMWARE "0.1.0"
+   Caractéristiques :
+     Données      (notify)  messages JSON : états réguliers et événements
+     Commande     (write)   commandes texte de l'application, ex. « PHOTO »
+     Réponse      (notify)  réponse à chaque commande
+     Journal      (notify)  lignes du journal en direct
+     OTA contrôle (write + notify) et OTA données (write) : mise à jour du firmware
+     Fichier      (notify)  contenu brut d'un fichier téléchargé
 
-// Nom diffusé en Bluetooth (celui que l'application recherche).
-#define APPLI_NOM_BLE "Moto_ESP32"
+   La tâche de ce module exécute les commandes reçues et envoie les données
+   régulières (GPS chaque seconde, batterie, réseau, système...).
+   ══════════════════════════════════════════════════════════════════════════════ */
 
-// UUID du service et des caractéristiques (doivent être identiques côté Android).
-#define APPLI_UUID_SERVICE     "7a3b0001-5c1e-4b8a-9f2d-6d6f746f3031"
-#define APPLI_UUID_TELEMETRIE  "7a3b0002-5c1e-4b8a-9f2d-6d6f746f3031"  // NOTIFY : données en direct (JSON)
-#define APPLI_UUID_COMMANDE    "7a3b0003-5c1e-4b8a-9f2d-6d6f746f3031"  // WRITE  : commande texte
-#define APPLI_UUID_REPONSE     "7a3b0004-5c1e-4b8a-9f2d-6d6f746f3031"  // NOTIFY : réponse aux commandes (JSON)
-#define APPLI_UUID_LOGS        "7a3b0005-5c1e-4b8a-9f2d-6d6f746f3031"  // NOTIFY : lignes de log
-#define APPLI_UUID_OTA_CTRL    "7a3b0006-5c1e-4b8a-9f2d-6d6f746f3031"  // WRITE + NOTIFY : pilotage de la mise à jour
-#define APPLI_UUID_OTA_DATA    "7a3b0007-5c1e-4b8a-9f2d-6d6f746f3031"  // WRITE  : morceaux du firmware
+#include <Arduino.h>
+#include <ArduinoJson.h>
 
-// Initialise le BLE, le service de l'application et lance la tâche d'envoi des données.
-bool initialiserAppliBLE();
+#define NOM_BLUETOOTH_DU_MODULE "Moto_ESP32"
 
-// À appeler pour chaque ligne de log (fait par my_log_printf). Non bloquant, sans effet si personne n'est connecté.
-void appliBLE_transmettreLog(const char* ligne);
+#define UUID_SERVICE_APPLI        "7a3b0001-5c1e-4b8a-9f2d-6d6f746f3031"
+#define UUID_DONNEES              "7a3b0002-5c1e-4b8a-9f2d-6d6f746f3031"
+#define UUID_COMMANDE             "7a3b0003-5c1e-4b8a-9f2d-6d6f746f3031"
+#define UUID_REPONSE              "7a3b0004-5c1e-4b8a-9f2d-6d6f746f3031"
+#define UUID_JOURNAL              "7a3b0005-5c1e-4b8a-9f2d-6d6f746f3031"
+#define UUID_OTA_CONTROLE         "7a3b0006-5c1e-4b8a-9f2d-6d6f746f3031"
+#define UUID_OTA_DONNEES          "7a3b0007-5c1e-4b8a-9f2d-6d6f746f3031"
+#define UUID_FICHIER              "7a3b0008-5c1e-4b8a-9f2d-6d6f746f3031"
 
-// true si un téléphone est connecté et authentifié.
-bool appliBLE_connectee();
+// true si un téléphone est connecté ET authentifié par le code PIN.
+bool appliConnectee();
 
-// Tâche FreeRTOS lancée par initialiserAppliBLE() (cœur réseau).
-void tacheAppliBLE(void * pvParameters);
+// Envoie un message JSON (état ou événement) sur la caractéristique Données.
+void publierUnEvenementVersLAppli(JsonDocument& message);
 
-#endif // CONFIG_APPLI_H
+// Répond à une commande : {"t":"rep","cmd":"PHOTO","ok":true,"msg":"..."}
+void repondreALAppli(const char* commande, bool reussi, const char* message);
+
+// Lignes du journal, réponses de la mise à jour, octets d'un fichier téléchargé.
+void transmettreUneLigneDuJournalALAppli(const char* ligne);
+void envoyerUneReponseDeMiseAJourALAppli(const char* texte);
+void envoyerDesOctetsALAppli(const uint8_t* octets, size_t taille);
+
+// Taille utile d'une notification (dépend de ce que le téléphone a négocié).
+size_t tailleMaximumDUneNotification();
+
+bool demarrerModuleAppli();
+
+#endif // MODULE_APPLI_H
