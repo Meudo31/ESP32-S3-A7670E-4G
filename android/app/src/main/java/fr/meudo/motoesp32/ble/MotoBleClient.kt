@@ -421,6 +421,7 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
         uuid: java.util.UUID,
         donnees: ByteArray,
         type: Int = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT,
+        delaiMs: Long = 10_000,
     ): Boolean = operation.withLock {
         val g = gatt ?: return false
         val car = caracteristique(uuid) ?: return false
@@ -436,7 +437,7 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
             g.writeCharacteristic(car)
         }
         if (!lance) return false
-        withTimeoutOrNull(10_000) { attente.await() } == BluetoothGatt.GATT_SUCCESS
+        withTimeoutOrNull(delaiMs) { attente.await() } == BluetoothGatt.GATT_SUCCESS
     }
 
     // ─────────────────────────────── Commandes ───────────────────────────────
@@ -600,6 +601,11 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
             return false
         }
         gatt?.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
+        // Le module prévient tout de suite s'il ne peut plus écrire (carte SD...) : on arrête alors l'envoi.
+        var erreurDuModule: String? = null
+        val surveillance = scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            erreurDuModule = reponses.first { it.commande == "FICHIER_ENVOYER" && !it.ok }.message
+        }
         // Une valeur Bluetooth fait au plus 512 octets (norme BLE) : avec un MTU de 517, MTU − 3 = 514 serait refusé
         // par le module. On prend donc au plus 509 octets, comme pour la mise à jour du firmware.
         val tailleDUnMorceau = (mtu - 3).coerceIn(20, 509)
@@ -607,14 +613,19 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
         var erreur: String? = null
         while (position < contenu.size) {
             if (envoiAnnule) { erreur = "Annulé"; break }
+            val refusDuModule = erreurDuModule
+            if (refusDuModule != null) { erreur = refusDuModule; break }
             val fin = minOf(position + tailleDUnMorceau, contenu.size)
-            if (!ecrire(Protocole.FICHIER_ENTRANT, contenu.copyOfRange(position, fin))) {
-                erreur = "Connexion perdue pendant l'envoi"
+            // Le module peut faire patienter quelques secondes si la carte SD est lente : délai de 20 s.
+            if (!ecrire(Protocole.FICHIER_ENTRANT, contenu.copyOfRange(position, fin), delaiMs = 20_000)) {
+                erreur = erreurDuModule ?: if (_etat.value is EtatConnexion.Connecte)
+                    "Le module ne répond plus (bloqué à ${position / 1024} Ko)" else "Connexion perdue pendant l'envoi"
                 break
             }
             position = fin
             _envoi.value = EtatEnvoi.EnCours(chemin, position.toLong(), contenu.size.toLong())
         }
+        surveillance.cancel()
         gatt?.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_BALANCED)
         if (erreur != null) {
             envoyerCommande("FICHIER_ENVOYER_ANNULER")

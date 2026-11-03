@@ -1,4 +1,5 @@
 #include <ArduinoJson.h>
+#include <esp_heap_caps.h>
 
 #include "configuration.h"
 #include "module_explorateur_fichiers.h"
@@ -161,10 +162,13 @@ struct ReceptionDUnFichier {
     bool     enCours = false;
     String   cheminFinal;
     String   cheminTemporaire;
+    File     fichier;                 // reste ouvert pendant toute la réception : pas de réouverture tous les 8 Ko
     uint32_t tailleAttendue = 0;
     uint32_t octetsRecus = 0;
     uint32_t crc = 0;
     bool     erreurDEcriture = false;
+    bool     erreurSignalee = false;   // l'application a déjà été prévenue
+    char     causeDeLErreur[96] = "";
     uint8_t* tampon = nullptr;
     size_t   remplissage = 0;
 };
@@ -176,12 +180,13 @@ SemaphoreHandle_t   verrouDeLaReception = nullptr;
 // carte SD depuis là (c'est ce qui faisait planter le module), on les confie à une tâche dédiée.
 struct MorceauRecu {
     uint16_t taille;
-    uint8_t  octets[520];   // un morceau fait au plus MTU − 3 = 514 octets
+    uint8_t  octets[520];   // un morceau fait au plus 509 octets
 };
+const int          NOMBRE_DE_MORCEAUX_EN_AVANCE = 48;   // ≈ 24 Ko : de quoi attendre une carte SD lente
 QueueHandle_t      fileDesMorceaux = nullptr;
 volatile int       morceauxEnAttente = 0;
 portMUX_TYPE       verrouDuCompteur = portMUX_INITIALIZER_UNLOCKED;
-const uint32_t     ATTENTE_MAXIMUM_POUR_DEPOSER_UN_MORCEAU_MS = 3000;
+const uint32_t     ATTENTE_MAXIMUM_POUR_DEPOSER_UN_MORCEAU_MS = 8000;
 
 void compterUnMorceau(int variation) {
     portENTER_CRITICAL(&verrouDuCompteur);
@@ -196,22 +201,46 @@ void viderLaFileDesMorceaux() {
     portEXIT_CRITICAL(&verrouDuCompteur);
 }
 
+// Note la première erreur ; la tâche « Réception » la signale aussitôt à l'application, qui arrête l'envoi.
+void noterUneErreurDeReception(const char* cause) {
+    if (reception.erreurDEcriture) return;
+    strlcpy(reception.causeDeLErreur, cause, sizeof(reception.causeDeLErreur));
+    reception.erreurDEcriture = true;
+}
+
+// Écrit le tampon dans le fichier .part. En cas d'échec (carte occupée par une autre tâche, écriture partielle),
+// on réessaie plusieurs fois avant d'abandonner.
 bool viderLeTamponSurLaCarte() {
-    if (reception.remplissage == 0) return true;
-    bool reussi = false;
-    if (prendreLaCarteSD()) {
-        File fichier = systemeDeFichiersDeLaCarteSD().open(reception.cheminTemporaire, FILE_APPEND);
-        if (fichier) {
-            reussi = fichier.write(reception.tampon, reception.remplissage) == reception.remplissage;
-            fichier.close();
+    size_t dejaEcrits = 0;
+    for (int essai = 1; essai <= 4 && dejaEcrits < reception.remplissage; essai++) {
+        if (!prendreLaCarteSD(8000)) {
+            ecrireDansLeJournal("[FICHIERS] Carte SD occupée (essai %d).", essai);
+            continue;
+        }
+        if (reception.fichier) {
+            dejaEcrits += reception.fichier.write(reception.tampon + dejaEcrits, reception.remplissage - dejaEcrits);
         }
         rendreLaCarteSD();
+        if (dejaEcrits < reception.remplissage) {
+            ecrireDansLeJournal("[FICHIERS] Écriture incomplète sur la carte SD (essai %d).", essai);
+            vTaskDelay(pdMS_TO_TICKS(100 * essai));
+        }
     }
+    const bool reussi = dejaEcrits == reception.remplissage;
     reception.remplissage = 0;
     return reussi;
 }
 
+void fermerLeFichierDeReception() {
+    if (!reception.fichier) return;
+    if (prendreLaCarteSD(10000)) {
+        reception.fichier.close();
+        rendreLaCarteSD();
+    }
+}
+
 void oublierLaReception(bool effacerLeFichierTemporaire) {
+    fermerLeFichierDeReception();
     if (effacerLeFichierTemporaire && reception.cheminTemporaire.length() > 0) {
         supprimerFichierOuDossier(reception.cheminTemporaire.c_str());
     }
@@ -301,23 +330,28 @@ bool commencerLaReceptionDUnFichier(const String& chemin, uint32_t taille, Strin
     reception.cheminFinal      = chemin;
     reception.cheminTemporaire = chemin + ".part";
     reception.tailleAttendue   = taille;
-    reception.enCours          = true;
     supprimerFichierOuDossier(reception.cheminTemporaire.c_str());   // reste d'un envoi précédent interrompu
-    static const uint8_t aucunOctet = 0;
-    const bool fichierCree = ecrireUnFichier(reception.cheminTemporaire.c_str(), &aucunOctet, 0);   // fichier vide
-    if (!fichierCree) oublierLaReception(false);
+    if (prendreLaCarteSD(8000)) {
+        reception.fichier = systemeDeFichiersDeLaCarteSD().open(reception.cheminTemporaire, FILE_WRITE);
+        rendreLaCarteSD();
+    }
+    const bool fichierCree = (bool)reception.fichier;
+    if (fichierCree) reception.enCours = true;
+    else             oublierLaReception(false);
     xSemaphoreGive(verrouDeLaReception);
     compteRendu = fichierCree ? String("Prêt à recevoir ") + taille + " octets" : String("Impossible de créer le fichier");
     if (fichierCree) ecrireDansLeJournal("[FICHIERS] Réception de %s (%u octets) depuis le téléphone.", chemin.c_str(), (unsigned)taille);
     return fichierCree;
 }
 
+bool receptionDUnFichierEnCours() { return reception.enCours; }
+
 // Tâche « Réception » : écrit sur la carte SD les morceaux déposés par le Bluetooth.
 static void ajouterUnMorceauAuFichier(const uint8_t* octets, size_t taille) {
     xSemaphoreTake(verrouDeLaReception, portMAX_DELAY);
     if (reception.enCours && !reception.erreurDEcriture) {
         if (reception.octetsRecus + taille > reception.tailleAttendue) {
-            reception.erreurDEcriture = true;   // plus d'octets qu'annoncé
+            noterUneErreurDeReception("Le module a reçu plus d'octets qu'annoncé");
         } else {
             reception.crc = continuerLeCRC32(reception.crc, octets, taille);
             reception.octetsRecus += taille;
@@ -329,7 +363,7 @@ static void ajouterUnMorceauAuFichier(const uint8_t* octets, size_t taille) {
                 octets += aCopier;
                 taille -= aCopier;
                 if (reception.remplissage == TAILLE_DU_TAMPON_DE_RECEPTION && !viderLeTamponSurLaCarte()) {
-                    reception.erreurDEcriture = true;
+                    noterUneErreurDeReception("Écriture sur la carte SD impossible");
                     break;
                 }
             }
@@ -338,44 +372,58 @@ static void ajouterUnMorceauAuFichier(const uint8_t* octets, size_t taille) {
     xSemaphoreGive(verrouDeLaReception);
 }
 
+// Prévient l'application dès qu'une erreur survient, pour qu'elle n'envoie pas le reste du fichier pour rien.
+static void signalerLErreurALAppli() {
+    if (!reception.enCours || !reception.erreurDEcriture || reception.erreurSignalee) return;
+    reception.erreurSignalee = true;
+    ecrireDansLeJournal("[FICHIERS] Réception de %s interrompue à %u octets : %s.",
+                        reception.cheminFinal.c_str(), (unsigned)reception.octetsRecus, reception.causeDeLErreur);
+    repondre("FICHIER_ENVOYER", false, reception.causeDeLErreur);
+}
+
 static void tacheReceptionDeFichiers(void*) {
     static MorceauRecu morceau;
     for (;;) {
-        if (xQueueReceive(fileDesMorceaux, &morceau, portMAX_DELAY) != pdPASS) continue;
-        ajouterUnMorceauAuFichier(morceau.octets, morceau.taille);
-        compterUnMorceau(-1);
+        if (xQueueReceive(fileDesMorceaux, &morceau, pdMS_TO_TICKS(200)) == pdPASS) {
+            ajouterUnMorceauAuFichier(morceau.octets, morceau.taille);
+            compterUnMorceau(-1);
+        }
+        signalerLErreurALAppli();
     }
 }
 
 // Appelé par le Bluetooth : dépose le morceau dans la file, sans toucher à la carte SD.
-// Si la file est pleine, on attend un peu : le téléphone attend l'accusé de réception, il ralentit donc tout seul.
+// Si la file est pleine, on attend : le téléphone attend l'accusé de réception, il ralentit donc tout seul.
 void recevoirUnMorceauDuTelephone(const uint8_t* octets, size_t taille) {
     static MorceauRecu morceau;   // statique : surtout pas 520 octets sur la petite pile du Bluetooth
-    if (fileDesMorceaux == nullptr || !reception.enCours || taille == 0) return;
+    if (fileDesMorceaux == nullptr || !reception.enCours || reception.erreurDEcriture || taille == 0) return;
     morceau.taille = min(taille, sizeof(morceau.octets));
     memcpy(morceau.octets, octets, morceau.taille);
     compterUnMorceau(+1);
     if (xQueueSend(fileDesMorceaux, &morceau, pdMS_TO_TICKS(ATTENTE_MAXIMUM_POUR_DEPOSER_UN_MORCEAU_MS)) != pdPASS) {
         compterUnMorceau(-1);
-        reception.erreurDEcriture = true;
+        noterUneErreurDeReception("La carte SD est trop lente, réessayer");
     }
 }
 
 bool terminerLaReceptionDUnFichier(uint32_t crcAttendu, String& compteRendu) {
     // On attend que la tâche « Réception » ait écrit tous les morceaux encore dans la file.
     const uint32_t debut = millis();
-    while (morceauxEnAttente > 0 && millis() - debut < 10 * UNE_SECONDE_MS) vTaskDelay(pdMS_TO_TICKS(20));
+    while (morceauxEnAttente > 0 && millis() - debut < 30 * UNE_SECONDE_MS) vTaskDelay(pdMS_TO_TICKS(20));
     xSemaphoreTake(verrouDeLaReception, portMAX_DELAY);
     bool reussi = false;
     if (!reception.enCours) {
         compteRendu = "Aucun envoi en cours";
-    } else if (reception.erreurDEcriture || !viderLeTamponSurLaCarte()) {
+    } else if (reception.erreurDEcriture) {
+        compteRendu = reception.causeDeLErreur;
+    } else if (!viderLeTamponSurLaCarte()) {
         compteRendu = "Écriture sur la carte SD impossible";
     } else if (reception.octetsRecus != reception.tailleAttendue) {
         compteRendu = String("Fichier incomplet : ") + reception.octetsRecus + " octets sur " + reception.tailleAttendue;
     } else if (reception.crc != crcAttendu) {
         compteRendu = "Fichier abîmé pendant le transfert (CRC différent), réessayer";
     } else {
+        fermerLeFichierDeReception();
         supprimerFichierOuDossier(reception.cheminFinal.c_str());   // remplace un fichier du même nom
         reussi = renommerOuDeplacer(reception.cheminTemporaire.c_str(), reception.cheminFinal.c_str());
         compteRendu = reussi ? reception.cheminFinal : String("Impossible de renommer le fichier reçu");
@@ -397,10 +445,20 @@ void annulerLaReceptionDUnFichier() {
     xSemaphoreGive(verrouDeLaReception);
 }
 
+// La file des morceaux (≈ 25 Ko) va de préférence dans la PSRAM, pour laisser la RAM interne au Bluetooth.
+static QueueHandle_t creerLaFileDesMorceaux() {
+    static StaticQueue_t structureDeLaFile;
+    uint8_t* stockage = (uint8_t*)heap_caps_malloc(NOMBRE_DE_MORCEAUX_EN_AVANCE * sizeof(MorceauRecu), MALLOC_CAP_SPIRAM);
+    if (stockage != nullptr) {
+        return xQueueCreateStatic(NOMBRE_DE_MORCEAUX_EN_AVANCE, sizeof(MorceauRecu), stockage, &structureDeLaFile);
+    }
+    return xQueueCreate(16, sizeof(MorceauRecu));
+}
+
 bool demarrerModuleExplorateurFichiers() {
     fileDesDemandes = xQueueCreate(4, sizeof(DemandeSurLesFichiers));
     verrouDeLaReception = xSemaphoreCreateMutex();
-    fileDesMorceaux     = xQueueCreate(16, sizeof(MorceauRecu));   // 16 morceaux ≈ 8 Ko d'avance
+    fileDesMorceaux     = creerLaFileDesMorceaux();
     if (fileDesDemandes == nullptr || verrouDeLaReception == nullptr || fileDesMorceaux == nullptr) return false;
     if (!creerTacheSurveillee(tacheReceptionDeFichiers, "Reception", 6144, PRIORITE_NORMALE, COEUR_TRAITEMENTS)) return false;
     return creerTacheSurveillee(tacheExplorateurFichiers, "Fichiers", 6144, PRIORITE_BASSE, COEUR_TRAITEMENTS, &tacheExplorateur);

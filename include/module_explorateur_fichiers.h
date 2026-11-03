@@ -39,6 +39,7 @@ bool commencerLaReceptionDUnFichier(const String& chemin, uint32_t taille, Strin
 void recevoirUnMorceauDuTelephone(const uint8_t* octets, size_t taille);   // appelé par le Bluetooth
 bool terminerLaReceptionDUnFichier(uint32_t crcAttendu, String& compteRendu);
 void annulerLaReceptionDUnFichier();
+bool receptionDUnFichierEnCours();   // pendant un envoi, les données en direct sont suspendues
 
 bool demarrerModuleExplorateurFichiers();
 

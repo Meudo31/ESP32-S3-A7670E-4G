@@ -566,7 +566,8 @@ void tacheAppli(void*) {
             BLEDevice::startAdvertising();
         }
 
-        if (authentifie && !miseAJourEnCours()) {
+        // Pendant une mise à jour ou un envoi de fichier, on laisse toute la liaison au transfert.
+        if (authentifie && !miseAJourEnCours() && !receptionDUnFichierEnCours()) {
             const uint32_t maintenant = millis();
             if (maintenant - dernierGPS       >= PERIODE_GPS)      { dernierGPS = maintenant;       envoyerLaPositionGPS(); }
             if (maintenant - derniereBatterie >= PERIODE_BATTERIE) { derniereBatterie = maintenant; envoyerLaBatterie(); }
@@ -617,7 +618,7 @@ void repondreALAppli(const char* commande, bool reussi, const char* message) {
 }
 
 void transmettreUneLigneDuJournalALAppli(const char* ligne) {
-    if (fileDuJournal == nullptr || !appliConnectee() || !journalDemande || miseAJourEnCours()) return;
+    if (fileDuJournal == nullptr || !appliConnectee() || !journalDemande || miseAJourEnCours() || receptionDUnFichierEnCours()) return;
     LigneDuJournalPourLAppli copie;
     strlcpy(copie.texte, ligne, sizeof(copie.texte));
     xQueueSend(fileDuJournal, &copie, 0);   // file pleine : la ligne reste sur la carte SD et le port série
