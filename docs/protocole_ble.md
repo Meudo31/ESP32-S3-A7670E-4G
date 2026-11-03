@@ -105,7 +105,7 @@ Pour en ajouter une : une ligne dans le tableau `COMMANDES` de `module_appli.cpp
 ## Envoi d'un fichier du téléphone vers la carte SD
 
 1. L'application envoie `FICHIER_ENVOYER /sons/sms.wav|48210` et attend la réponse `rep` (ok, ou la raison : place, carte absente...).
-2. Elle écrit le contenu par morceaux de (MTU − 3) octets sur la caractéristique Fichier entrant, chaque écriture avec accusé de réception.
+2. Elle écrit le contenu par morceaux de (MTU − 3) octets, 509 au plus, sur la caractéristique Fichier entrant, chaque écriture avec accusé de réception.
    Le module les écrit dans `/sons/sms.wav.part`, par paquets de 8 Ko.
 3. Elle envoie `FICHIER_ENVOYER_FIN <crc32>`. Le module vérifie la taille et le CRC32, remplace un éventuel fichier du même nom
    et renomme `.part` en nom définitif. Une déconnexion ou `FICHIER_ENVOYER_ANNULER` efface le fichier partiel.

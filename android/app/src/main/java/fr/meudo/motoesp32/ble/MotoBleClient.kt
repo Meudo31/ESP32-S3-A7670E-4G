@@ -600,7 +600,9 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
             return false
         }
         gatt?.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
-        val tailleDUnMorceau = maxOf(20, mtu - 3)
+        // Une valeur Bluetooth fait au plus 512 octets (norme BLE) : avec un MTU de 517, MTU − 3 = 514 serait refusé
+        // par le module. On prend donc au plus 509 octets, comme pour la mise à jour du firmware.
+        val tailleDUnMorceau = (mtu - 3).coerceIn(20, 509)
         var position = 0
         var erreur: String? = null
         while (position < contenu.size) {
