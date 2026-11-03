@@ -43,7 +43,7 @@ Chaque notification contient un objet JSON dont le champ `t` donne le type.
 | `mem` | 5 s | `ram_total` `ram_libre` `ram_min` `ram_bloc`, `psram_total` `psram_libre` `psram_min` `psram_bloc` (octets) |
 | `sim` | 15 s | `modele`, `logiciel`, `imei`, `voix` (le modem sait téléphoner), `etat`, `iccid`, `imsi`, `num` |
 | `carte` | 15 s | `version` (V1/V2), `methode` (comment elle a été détectée), `camera`, `sd`, `sd_type`, `sd_total`, `sd_util`, `heure` (source de l'heure), `vol` |
-| `neo` | 15 s et à chaque changement | `num`, `nom`, `lum` 0-255, `allumee`, `noms` (les 10 animations) |
+| `neo` | 15 s et à chaque changement | `num`, `nom`, `lum` 0-255, `allumee`, `noms` (les 13 animations) |
 | `appel` | 15 s et à chaque changement | `etat` (0 aucun, 1 sonnerie, 2 numérotation, 3 en communication), `num`, `duree` s |
 | `taches` | sur `SYSTEME` | `debut` (1 = nouvelle liste), `l` : `[nom, pile, pile restante, priorité, cœur]` ; la liste arrive en plusieurs messages |
 

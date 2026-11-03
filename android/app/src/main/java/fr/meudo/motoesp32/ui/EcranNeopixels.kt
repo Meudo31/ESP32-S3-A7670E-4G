@@ -1,6 +1,11 @@
 package fr.meudo.motoesp32.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -71,7 +76,7 @@ fun EcranNeopixels(modifier: Modifier, client: MotoBleClient) {
         }
 
         if (neo != null) {
-            Carte("Les 10 animations") {
+            Carte("Les ${neo.noms.size} animations") {
                 neo.noms.forEachIndexed { numero, nom ->
                     Row(
                         Modifier.fillMaxWidth().clickable { client.envoyerCommande("NEO $numero") },
@@ -79,6 +84,19 @@ fun EcranNeopixels(modifier: Modifier, client: MotoBleClient) {
                     ) {
                         RadioButton(selected = numero == neo.numero, onClick = { client.envoyerCommande("NEO $numero") })
                         Text("${numero + 1}. $nom")
+                    }
+                }
+            }
+        }
+
+        if (neo != null && neo.nom == "État des modules") {
+            Carte("Signification des voyants") {
+                Text("Allumé fixe : le module fonctionne. Bref éclair toutes les 1/2 s : il ne fonctionne pas. " +
+                    "Les LED suivantes font le chenillard bleu.", style = MaterialTheme.typography.bodySmall)
+                VOYANTS_DES_MODULES.forEachIndexed { numero, (nom, couleur) ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(14.dp).background(couleur, CircleShape))
+                        Text("  LED ${numero + 1} : $nom")
                     }
                 }
             }
@@ -106,3 +124,14 @@ fun EcranNeopixels(modifier: Modifier, client: MotoBleClient) {
         }
     }
 }
+
+/** Les voyants de l'animation « État des modules », dans l'ordre de la bande (voir module_neopixels.cpp). */
+private val VOYANTS_DES_MODULES = listOf(
+    "Carte SD" to Color(0xFFFFFFFF),
+    "Modem 4G" to Color(0xFFFFB400),
+    "Réseau 4G" to Color(0xFF00FFFF),
+    "GPS (position)" to Color(0xFF00FF00),
+    "Batterie (plus de 15 %)" to Color(0xFFFF5000),
+    "Caméra" to Color(0xFFA000FF),
+    "Appli connectée" to Color(0xFFFF0078),
+)

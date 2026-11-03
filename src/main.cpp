@@ -11,7 +11,7 @@
      carte SD             Carte SD       montage et surveillance de la carte
      système              Systeme        mémoire, piles des tâches, infos processeur
      batterie             Batterie       jauge MAX17048, source d'alimentation
-     néopixels            NeoPixels      10 animations sur la bande de 14 LED
+     néopixels            NeoPixels      13 animations sur la bande de 14 LED
      bouton               Bouton         change d'animation
      caméra               Camera         photos enregistrées sur la carte SD
      modem                Modem          dialogue AT avec l'A7670E, notifications

@@ -2,8 +2,9 @@
 #define MODULE_NEOPIXELS_H
 
 /* ══════════════════════════════════════════════════════════════════════════════
-   MODULE NEOPIXELS : bande de 14 LED WS2812B branchée sur GPIO 41.
-   Dix animations au choix. On change d'animation avec le bouton (GPIO 21) ou
+   MODULE NEOPIXELS : bande de 14 LED WS2812B branchée sur GPIO 40.
+   Treize animations au choix, dont « État des modules » (un voyant par module)
+   et « Toutes LED éteintes ». On change d'animation avec le bouton (GPIO 21) ou
    depuis l'application. À chaque changement :
      - le nom de l'animation est prononcé sur le haut-parleur ;
      - l'application reçoit le nom de l'animation en cours.
@@ -13,7 +14,7 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 
-#define NOMBRE_D_ANIMATIONS 10
+#define NOMBRE_D_ANIMATIONS 13
 
 int  numeroDeLAnimationEnCours();
 const char* nomDeLAnimation(int numero);

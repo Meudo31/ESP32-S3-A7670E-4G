@@ -11,7 +11,9 @@ Boîtier connecté pour moto, basé sur la carte **Waveshare ESP32-S3 A7670E 4G*
 - **GPS** (GPS, GLONASS, Galileo, BeiDou) par le modem A7670E : position, vitesse, altitude, cap, satellites, précision
 - **4G** : SMS envoyés et reçus, appels sortants et entrants, toutes les informations du réseau et de la carte SIM
 - **Photo** enregistrée sur la carte SD, un dossier par jour : `/photos/jj-mm-aaaa/jj-mm-aaaa_hh-mm-ss_ESP32-A7670.jpg`
-- **Bande de 14 LED NeoPixel** (GPIO 40) avec 10 animations, changées par le **bouton** (GPIO 21) ou l'application
+- **Bande de 14 LED NeoPixel** (GPIO 40) avec 13 animations, changées par le **bouton** (GPIO 21) ou l'application.
+  L'animation « État des modules » allume un voyant par module (carte SD, modem, réseau 4G, GPS, batterie, caméra, appli) :
+  fixe s'il fonctionne, bref éclair toutes les 1/2 s sinon ; les autres LED font un chenillard bleu
 - **Haut-parleur** du modem : nom de l'animation prononcé à chaque changement, son à l'arrivée d'un SMS, sonnerie et voix de l'appelant
 - **Batterie** : charge, tension, en charge ou non, source d'alimentation, autonomie (jauge MAX17048)
 - **Journal** du module : un fichier par jour sur la carte SD (`/journaux/jj-mm-aaaa.log`), aussi visible en direct dans l'application
@@ -94,7 +96,7 @@ src/
 ├── module_haut_parleur.cpp          Voix de synthèse, sons, sonnerie, volume
 ├── module_gps.cpp                   Position GNSS
 ├── module_camera.cpp                Photos sur la carte SD
-├── module_neopixels.cpp             Les 10 animations de la bande LED
+├── module_neopixels.cpp             Les 13 animations de la bande LED
 ├── module_bouton.cpp                Bouton : appui court = animation suivante, appui long = allumer / éteindre
 ├── module_batterie.cpp              Jauge de batterie et source d'alimentation
 ├── module_explorateur_fichiers.cpp  Fichiers de la carte SD pour l'application

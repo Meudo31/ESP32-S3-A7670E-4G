@@ -5,6 +5,12 @@
 #include "configuration.h"
 #include "module_neopixels.h"
 #include "module_appli.h"
+#include "module_batterie.h"
+#include "module_camera.h"
+#include "module_carte_sd.h"
+#include "module_gps.h"
+#include "module_modem.h"
+#include "module_reseau_4g.h"
 #include "module_haut_parleur.h"
 #include "module_journal.h"
 #include "module_systeme.h"
@@ -24,6 +30,7 @@ const int      N = NOMBRE_DE_LED_DE_LA_BANDE;
 const char* const NOMS_DES_ANIMATIONS[NOMBRE_D_ANIMATIONS] = {
     "Arc-en-ciel", "Respiration", "Balayage", "Comète", "Feu de camp",
     "Gyrophare", "Étoiles", "Chenillard", "Confettis", "Vague océan",
+    "Chenillard bleu", "État des modules", "Toutes LED éteintes",
 };
 
 // ─────────────────────────────── Outils de dessin ───────────────────────────────
@@ -47,7 +54,7 @@ void assombrirTout(uint8_t pourcentageConserve) {
     }
 }
 
-// ─────────────────────────────── Les dix animations ───────────────────────────────
+// ─────────────────────────────── Les animations ─────────────────────────────────
 // Chaque animation dessine une image en fonction du temps écoulé (en millisecondes).
 
 void animationArcEnCiel(uint32_t temps) {
@@ -120,10 +127,80 @@ void animationVagueOcean(uint32_t temps) {
     }
 }
 
+// ─────────────────────────────── Chenillard bleu ───────────────────────────────
+// Toutes les 1/2 seconde, la LED suivante lance un bref éclair bleu.
+
+const uint32_t PERIODE_DU_CHENILLARD_BLEU_MS = 500;
+const uint32_t DUREE_D_UN_ECLAIR_MS          = 120;
+
+void dessinerLeChenillardBleu(uint32_t temps, int premiereLed, int derniereLed) {
+    const int nombreDeLed = derniereLed - premiereLed + 1;
+    const int ledDuMoment = premiereLed + (temps / PERIODE_DU_CHENILLARD_BLEU_MS) % nombreDeLed;
+    const bool eclair = (temps % PERIODE_DU_CHENILLARD_BLEU_MS) < DUREE_D_UN_ECLAIR_MS;
+    for (int led = premiereLed; led <= derniereLed; led++) allumer(led, 0, 0, 0);
+    if (eclair) allumer(ledDuMoment, 0, 0, 255);
+}
+
+void animationChenillardBleu(uint32_t temps) { dessinerLeChenillardBleu(temps, 0, N - 1); }
+
+// ─────────────────────────────── État des modules ───────────────────────────────
+// Les premières LED montrent chacune un module, dans sa propre couleur :
+//   allumée fixe = le module fonctionne ; bref éclair toutes les 1/2 seconde = il ne fonctionne pas.
+// Les LED suivantes font le chenillard bleu.
+
+struct VoyantDUnModule {
+    const char* nom;
+    uint8_t rouge, vert, bleu;
+};
+
+const VoyantDUnModule VOYANTS[] = {
+    { "Carte SD",            255, 255, 255 },   // LED 1 : blanc
+    { "Modem 4G",            255, 180,   0 },   // LED 2 : jaune
+    { "Réseau 4G",             0, 255, 255 },   // LED 3 : cyan
+    { "GPS (position)",        0, 255,   0 },   // LED 4 : vert
+    { "Batterie",            255,  80,   0 },   // LED 5 : orange
+    { "Caméra",              160,   0, 255 },   // LED 6 : violet
+    { "Appli connectée",     255,   0, 120 },   // LED 7 : rose
+};
+const int NOMBRE_DE_VOYANTS = sizeof(VOYANTS) / sizeof(VOYANTS[0]);
+
+bool modulesQuiFonctionnent[NOMBRE_DE_VOYANTS] = {};
+uint32_t derniereVerificationDesModules = 0;
+
+void verifierLesModules() {
+    const EtatDuReseau4G reseau = etatDuReseau4G();
+    const EtatDeLaBatterie batterie = etatDeLaBatterie();
+    modulesQuiFonctionnent[0] = carteSDMontee();
+    modulesQuiFonctionnent[1] = leModemEstPret();
+    modulesQuiFonctionnent[2] = reseau.enregistrement == 1 || reseau.enregistrement == 5;   // inscrit (ou itinérance)
+    modulesQuiFonctionnent[3] = positionGPS().positionValide;
+    modulesQuiFonctionnent[4] = batterie.jaugePresente && batterie.chargePourcent > 15;
+    modulesQuiFonctionnent[5] = cameraDisponible();
+    modulesQuiFonctionnent[6] = appliConnectee();
+}
+
+void animationEtatDesModules(uint32_t temps) {
+    // L'état des modules est relu deux fois par seconde (inutile à chaque image).
+    if (millis() - derniereVerificationDesModules >= 500) {
+        derniereVerificationDesModules = millis();
+        verifierLesModules();
+    }
+    const bool eclair = (temps % PERIODE_DU_CHENILLARD_BLEU_MS) < DUREE_D_UN_ECLAIR_MS;
+    for (int numero = 0; numero < NOMBRE_DE_VOYANTS && numero < N; numero++) {
+        const VoyantDUnModule& voyant = VOYANTS[numero];
+        if (modulesQuiFonctionnent[numero] || eclair) allumer(numero, voyant.rouge, voyant.vert, voyant.bleu);
+        else allumer(numero, 0, 0, 0);
+    }
+    if (NOMBRE_DE_VOYANTS < N) dessinerLeChenillardBleu(temps, NOMBRE_DE_VOYANTS, N - 1);
+}
+
+void animationToutesEteintes(uint32_t) { toutEteindre(); }
+
 typedef void (*FonctionDAnimation)(uint32_t temps);
 const FonctionDAnimation ANIMATIONS[NOMBRE_D_ANIMATIONS] = {
     animationArcEnCiel, animationRespiration, animationBalayage, animationComete, animationFeuDeCamp,
     animationGyrophare, animationEtoiles,     animationChenillard, animationConfettis, animationVagueOcean,
+    animationChenillardBleu, animationEtatDesModules, animationToutesEteintes,
 };
 
 // ─────────────────────────────── Mémorisation et annonce ───────────────────────────────
