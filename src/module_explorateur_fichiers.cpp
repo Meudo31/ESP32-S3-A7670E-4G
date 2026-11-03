@@ -151,6 +151,50 @@ void telechargerVersLeTelephone(const char* chemin) {
     if (!reussi) ecrireDansLeJournal("[FICHIERS] Téléchargement interrompu : %s.", erreur);
 }
 
+// ─────────────────────────────── Envoi depuis le téléphone ───────────────────────────────
+// Les morceaux reçus sont gardés en mémoire et écrits sur la carte SD par paquets de 8 Ko :
+// moins d'accès à la carte, et la carte n'est jamais bloquée longtemps pour les autres tâches.
+
+const size_t TAILLE_DU_TAMPON_DE_RECEPTION = 8192;
+
+struct ReceptionDUnFichier {
+    bool     enCours = false;
+    String   cheminFinal;
+    String   cheminTemporaire;
+    uint32_t tailleAttendue = 0;
+    uint32_t octetsRecus = 0;
+    uint32_t crc = 0;
+    bool     erreurDEcriture = false;
+    uint8_t* tampon = nullptr;
+    size_t   remplissage = 0;
+};
+
+ReceptionDUnFichier reception;
+SemaphoreHandle_t   verrouDeLaReception = nullptr;
+
+bool viderLeTamponSurLaCarte() {
+    if (reception.remplissage == 0) return true;
+    bool reussi = false;
+    if (prendreLaCarteSD()) {
+        File fichier = systemeDeFichiersDeLaCarteSD().open(reception.cheminTemporaire, FILE_APPEND);
+        if (fichier) {
+            reussi = fichier.write(reception.tampon, reception.remplissage) == reception.remplissage;
+            fichier.close();
+        }
+        rendreLaCarteSD();
+    }
+    reception.remplissage = 0;
+    return reussi;
+}
+
+void oublierLaReception(bool effacerLeFichierTemporaire) {
+    if (effacerLeFichierTemporaire && reception.cheminTemporaire.length() > 0) {
+        supprimerFichierOuDossier(reception.cheminTemporaire.c_str());
+    }
+    free(reception.tampon);
+    reception = ReceptionDUnFichier();
+}
+
 // ─────────────────────────────── Exécution ───────────────────────────────
 
 void executer(const DemandeSurLesFichiers& demande) {
@@ -213,8 +257,96 @@ void annulerLeTelechargement() {
     if (tacheExplorateur != nullptr) xTaskNotifyGive(tacheExplorateur);
 }
 
+bool commencerLaReceptionDUnFichier(const String& chemin, uint32_t taille, String& compteRendu) {
+    if (!chemin.startsWith("/") || chemin.endsWith("/")) { compteRendu = "Chemin invalide"; return false; }
+    if (!carteSDMontee()) { compteRendu = "Carte SD absente"; return false; }
+    const InformationsCarteSD carte = informationsDeLaCarteSD();
+    if (carte.tailleTotaleOctets - carte.espaceUtiliseOctets < (uint64_t)taille + 65536) {
+        compteRendu = "Plus assez de place sur la carte SD";
+        return false;
+    }
+    xSemaphoreTake(verrouDeLaReception, portMAX_DELAY);
+    if (reception.enCours) oublierLaReception(true);
+    reception.tampon = (uint8_t*)malloc(TAILLE_DU_TAMPON_DE_RECEPTION);
+    if (reception.tampon == nullptr) {
+        xSemaphoreGive(verrouDeLaReception);
+        compteRendu = "Mémoire insuffisante";
+        return false;
+    }
+    reception.cheminFinal      = chemin;
+    reception.cheminTemporaire = chemin + ".part";
+    reception.tailleAttendue   = taille;
+    reception.enCours          = true;
+    supprimerFichierOuDossier(reception.cheminTemporaire.c_str());   // reste d'un envoi précédent interrompu
+    static const uint8_t aucunOctet = 0;
+    const bool fichierCree = ecrireUnFichier(reception.cheminTemporaire.c_str(), &aucunOctet, 0);   // fichier vide
+    if (!fichierCree) oublierLaReception(false);
+    xSemaphoreGive(verrouDeLaReception);
+    compteRendu = fichierCree ? String("Prêt à recevoir ") + taille + " octets" : String("Impossible de créer le fichier");
+    if (fichierCree) ecrireDansLeJournal("[FICHIERS] Réception de %s (%u octets) depuis le téléphone.", chemin.c_str(), (unsigned)taille);
+    return fichierCree;
+}
+
+void recevoirUnMorceauDuTelephone(const uint8_t* octets, size_t taille) {
+    xSemaphoreTake(verrouDeLaReception, portMAX_DELAY);
+    if (reception.enCours && !reception.erreurDEcriture) {
+        if (reception.octetsRecus + taille > reception.tailleAttendue) {
+            reception.erreurDEcriture = true;   // plus d'octets qu'annoncé
+        } else {
+            reception.crc = continuerLeCRC32(reception.crc, octets, taille);
+            reception.octetsRecus += taille;
+            while (taille > 0) {
+                const size_t place = TAILLE_DU_TAMPON_DE_RECEPTION - reception.remplissage;
+                const size_t aCopier = min(place, taille);
+                memcpy(reception.tampon + reception.remplissage, octets, aCopier);
+                reception.remplissage += aCopier;
+                octets += aCopier;
+                taille -= aCopier;
+                if (reception.remplissage == TAILLE_DU_TAMPON_DE_RECEPTION && !viderLeTamponSurLaCarte()) {
+                    reception.erreurDEcriture = true;
+                    break;
+                }
+            }
+        }
+    }
+    xSemaphoreGive(verrouDeLaReception);
+}
+
+bool terminerLaReceptionDUnFichier(uint32_t crcAttendu, String& compteRendu) {
+    xSemaphoreTake(verrouDeLaReception, portMAX_DELAY);
+    bool reussi = false;
+    if (!reception.enCours) {
+        compteRendu = "Aucun envoi en cours";
+    } else if (reception.erreurDEcriture || !viderLeTamponSurLaCarte()) {
+        compteRendu = "Écriture sur la carte SD impossible";
+    } else if (reception.octetsRecus != reception.tailleAttendue) {
+        compteRendu = String("Fichier incomplet : ") + reception.octetsRecus + " octets sur " + reception.tailleAttendue;
+    } else if (reception.crc != crcAttendu) {
+        compteRendu = "Fichier abîmé pendant le transfert (CRC différent), réessayer";
+    } else {
+        supprimerFichierOuDossier(reception.cheminFinal.c_str());   // remplace un fichier du même nom
+        reussi = renommerOuDeplacer(reception.cheminTemporaire.c_str(), reception.cheminFinal.c_str());
+        compteRendu = reussi ? reception.cheminFinal : String("Impossible de renommer le fichier reçu");
+    }
+    ecrireDansLeJournal("[FICHIERS] Réception de %s : %s.", reception.cheminFinal.c_str(), reussi ? "OK" : compteRendu.c_str());
+    oublierLaReception(!reussi);
+    xSemaphoreGive(verrouDeLaReception);
+    return reussi;
+}
+
+void annulerLaReceptionDUnFichier() {
+    if (verrouDeLaReception == nullptr) return;
+    xSemaphoreTake(verrouDeLaReception, portMAX_DELAY);
+    if (reception.enCours) {
+        ecrireDansLeJournal("[FICHIERS] Réception de %s annulée.", reception.cheminFinal.c_str());
+        oublierLaReception(true);
+    }
+    xSemaphoreGive(verrouDeLaReception);
+}
+
 bool demarrerModuleExplorateurFichiers() {
     fileDesDemandes = xQueueCreate(4, sizeof(DemandeSurLesFichiers));
-    if (fileDesDemandes == nullptr) return false;
+    verrouDeLaReception = xSemaphoreCreateMutex();
+    if (fileDesDemandes == nullptr || verrouDeLaReception == nullptr) return false;
     return creerTacheSurveillee(tacheExplorateurFichiers, "Fichiers", 6144, PRIORITE_BASSE, COEUR_TRAITEMENTS, &tacheExplorateur);
 }

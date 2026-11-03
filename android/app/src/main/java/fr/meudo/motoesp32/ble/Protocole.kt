@@ -19,6 +19,8 @@ object Protocole {
     val OTA_CTRL: UUID = UUID.fromString("7a3b0006-5c1e-4b8a-9f2d-6d6f746f3031")
     val OTA_DATA: UUID = UUID.fromString("7a3b0007-5c1e-4b8a-9f2d-6d6f746f3031")
     val FICHIER: UUID = UUID.fromString("7a3b0008-5c1e-4b8a-9f2d-6d6f746f3031")
+    /** Fichier envoyé du téléphone vers la carte SD (écriture avec accusé de réception). */
+    val FICHIER_ENTRANT: UUID = UUID.fromString("7a3b0009-5c1e-4b8a-9f2d-6d6f746f3031")
 
     /** Descripteur standard qui active les notifications. */
     val CCCD: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")

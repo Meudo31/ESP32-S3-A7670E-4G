@@ -10,7 +10,7 @@
 #include <Arduino.h>
 
 // ─── Version du firmware (affichée dans l'application). À augmenter à chaque nouvelle version. ───
-#define VERSION_DU_FIRMWARE "0.2.0"
+#define VERSION_DU_FIRMWARE "0.3.0"
 
 // ─── Nom du module dans les fichiers (photos) et en Bluetooth ───
 #define NOM_DU_MODULE_DANS_LES_FICHIERS "ESP32-A7670"

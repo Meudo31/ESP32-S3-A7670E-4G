@@ -320,6 +320,20 @@ void commandeAnnulerLeTelechargement(const char* nom, const ArgumentsDeCommande&
     annulerLeTelechargement();
     repondreALAppli(nom, true, "Téléchargement annulé");
 }
+void commandeRecevoirUnFichier(const char* nom, const ArgumentsDeCommande& a) {
+    String compteRendu;
+    const bool reussi = commencerLaReceptionDUnFichier(a.premier, strtoul(a.second.c_str(), nullptr, 10), compteRendu);
+    repondreALAppli(nom, reussi, compteRendu.c_str());
+}
+void commandeTerminerLaReception(const char* nom, const ArgumentsDeCommande& a) {
+    String compteRendu;
+    const bool reussi = terminerLaReceptionDUnFichier(strtoul(a.premier.c_str(), nullptr, 10), compteRendu);
+    repondreALAppli(nom, reussi, compteRendu.c_str());
+}
+void commandeAnnulerLaReception(const char* nom, const ArgumentsDeCommande&) {
+    annulerLaReceptionDUnFichier();
+    repondreALAppli(nom, true, "Envoi annulé");
+}
 
 struct CommandeConnue {
     const char*        nom;
@@ -357,6 +371,9 @@ const CommandeConnue COMMANDES[] = {
     { "FICHIER_TELECHARGER", commandeTelecharger },
     { "DL_ACK",              commandeConfirmationDeTelechargement },
     { "DL_ANNULER",          commandeAnnulerLeTelechargement },
+    { "FICHIER_ENVOYER",     commandeRecevoirUnFichier },
+    { "FICHIER_ENVOYER_FIN", commandeTerminerLaReception },
+    { "FICHIER_ENVOYER_ANNULER", commandeAnnulerLaReception },
 };
 
 void executerUneCommande(const char* texte) {
@@ -410,6 +427,7 @@ class RappelsDuServeur : public BLEServerCallbacks {
         telephoneAuthentifie = false;
         annulerLaMiseAJourEnCours();
         annulerLeTelechargement();
+        annulerLaReceptionDUnFichier();
         // La raison est notée dans le journal du jour pour comprendre les coupures :
         // 0x08 = plus de signal (trop loin, perturbations), 0x13 = coupé par le téléphone,
         // 0x16 = coupé par le module, 0x3E = liaison jamais établie.
@@ -451,6 +469,13 @@ class RappelsDuControleOTA : public BLECharacteristicCallbacks {
     void onWrite(BLECharacteristic* caracteristique) override {
         if (!telephoneAuthentifie) return;
         recevoirUnOrdreDeMiseAJour(caracteristique->getData(), caracteristique->getLength());
+    }
+};
+
+class RappelsDuFichierEntrant : public BLECharacteristicCallbacks {
+    void onWrite(BLECharacteristic* caracteristique) override {
+        if (!telephoneAuthentifie) return;
+        recevoirUnMorceauDuTelephone(caracteristique->getData(), caracteristique->getLength());
     }
 };
 
@@ -505,6 +530,8 @@ void preparerLeBluetooth() {
                            BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR);
     caracOtaDonnees->setCallbacks(new RappelsDesDonneesOTA());
     caracFichier = creerUneCaracteristique(service, UUID_FICHIER, BLECharacteristic::PROPERTY_NOTIFY);
+    BLECharacteristic* caracFichierEntrant = creerUneCaracteristique(service, UUID_FICHIER_ENTRANT, BLECharacteristic::PROPERTY_WRITE);
+    caracFichierEntrant->setCallbacks(new RappelsDuFichierEntrant());
     service->start();
 
     BLEAdvertising* annonce = BLEDevice::getAdvertising();

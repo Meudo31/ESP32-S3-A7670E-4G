@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -49,6 +50,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import fr.meudo.motoesp32.ble.ElementFichier
+import fr.meudo.motoesp32.ble.EtatEnvoi
 import fr.meudo.motoesp32.ble.EtatTelechargement
 import fr.meudo.motoesp32.ble.MotoBleClient
 import fr.meudo.motoesp32.ble.Protocole
@@ -70,6 +72,7 @@ private sealed interface Dialogue {
 fun EcranFichiers(modifier: Modifier, client: MotoBleClient) {
     val dossier by client.dossier.collectAsStateWithLifecycle()
     val telechargement by client.telechargement.collectAsStateWithLifecycle()
+    val envoi by client.envoi.collectAsStateWithLifecycle()
     var dialogue by remember { mutableStateOf<Dialogue?>(null) }
     var fichierAEnregistrer by remember { mutableStateOf<Pair<String, ByteArray>?>(null) }
     var apercu by remember { mutableStateOf<Pair<String, ByteArray>?>(null) }
@@ -85,6 +88,21 @@ fun EcranFichiers(modifier: Modifier, client: MotoBleClient) {
             }
         }
         fichierAEnregistrer = null
+    }
+
+    // Fenêtre Android « choisir un fichier » pour l'envoyer dans le dossier affiché de la carte SD.
+    val choisirUnFichierAEnvoyer = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val dossierDeDestination = dossier.chemin
+        portee.launch {
+            val lu = kotlinx.coroutines.withContext(Dispatchers.IO) { lireUnFichierDuTelephone(context, uri) }
+            when {
+                lu == null -> client.signalerUneErreurDEnvoi("Lecture du fichier impossible")
+                lu.second.size > TAILLE_MAXIMUM_D_UN_ENVOI -> client.signalerUneErreurDEnvoi(
+                    "Fichier trop gros (${Protocole.taille(lu.second.size.toLong())}, maximum ${Protocole.taille(TAILLE_MAXIMUM_D_UN_ENVOI.toLong())})")
+                else -> client.envoyerUnFichier(Protocole.chemin(dossierDeDestination, lu.first), lu.second)
+            }
+        }
     }
 
     LaunchedEffect(Unit) { if (dossier.elements.isEmpty()) client.ouvrirUnDossier(dossier.chemin) }
@@ -108,11 +126,15 @@ fun EcranFichiers(modifier: Modifier, client: MotoBleClient) {
             }
             Text(dossier.chemin, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f),
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
+            IconButton(onClick = { choisirUnFichierAEnvoyer.launch("*/*") }, enabled = envoi !is EtatEnvoi.EnCours) {
+                Icon(Icons.Filled.UploadFile, contentDescription = "Envoyer un fichier du téléphone ici")
+            }
             IconButton(onClick = { dialogue = Dialogue.NouveauDossier }) { Icon(Icons.Filled.CreateNewFolder, contentDescription = "Nouveau dossier") }
             IconButton(onClick = { client.actualiserLeDossier() }) { Icon(Icons.Filled.Refresh, contentDescription = "Actualiser") }
         }
         if (dossier.chargement) LinearProgressIndicator(Modifier.fillMaxWidth())
         BandeauTelechargement(telechargement, client)
+        BandeauEnvoi(envoi, client)
 
         LazyColumn(Modifier.fillMaxWidth()) {
             if (!dossier.chargement && dossier.elements.isEmpty()) item { Text("Dossier vide (ou carte SD absente).", Modifier.padding(8.dp)) }
@@ -156,6 +178,48 @@ fun EcranFichiers(modifier: Modifier, client: MotoBleClient) {
             },
             dismissButton = { TextButton(onClick = { apercu = null }) { Text("Fermer") } },
         )
+    }
+}
+
+/** Au-delà, l'envoi par Bluetooth serait trop long (environ 20 Ko/s) : mieux vaut passer par le PC. */
+private const val TAILLE_MAXIMUM_D_UN_ENVOI = 20 * 1024 * 1024
+
+/** Lit un fichier choisi sur le téléphone : son nom et son contenu. */
+private fun lireUnFichierDuTelephone(context: android.content.Context, uri: Uri): Pair<String, ByteArray>? = try {
+    val nom = context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+        ?.use { curseur -> if (curseur.moveToFirst()) curseur.getString(0) else null }
+        ?: uri.lastPathSegment?.substringAfterLast('/')
+        ?: "fichier"
+    val contenu = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+    // Les caractères « / » et « | » ont un sens dans les commandes du module : on les remplace.
+    if (contenu == null) null else nom.replace('/', '_').replace('|', '_') to contenu
+} catch (e: Exception) {
+    null
+}
+
+@Composable
+private fun BandeauEnvoi(etat: EtatEnvoi, client: MotoBleClient) {
+    when (etat) {
+        is EtatEnvoi.EnCours -> Column(Modifier.padding(vertical = 6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Envoi de ${etat.chemin.substringAfterLast('/')} : ${Protocole.taille(etat.envoyes)} / ${Protocole.taille(etat.total)}",
+                    Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                TextButton(onClick = { client.annulerLEnvoi() }) { Text("Annuler") }
+            }
+            LinearProgressIndicator(
+                progress = { if (etat.total > 0) etat.envoyes.toFloat() / etat.total else 0f },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        is EtatEnvoi.Termine -> Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("✅ ${etat.chemin.substringAfterLast('/')} envoyé sur la carte SD", Modifier.weight(1f))
+            TextButton(onClick = { client.oublierLEnvoi() }) { Text("OK") }
+        }
+        is EtatEnvoi.Erreur -> Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("⚠️ Envoi : ${etat.message}", Modifier.weight(1f), color = MaterialTheme.colorScheme.error)
+            TextButton(onClick = { client.oublierLEnvoi() }) { Text("OK") }
+        }
+        EtatEnvoi.Inactif -> {}
     }
 }
 

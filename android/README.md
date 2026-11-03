@@ -11,7 +11,7 @@ Menu latéral avec un écran par fonction :
 - **Téléphone** : SMS (lire, envoyer, supprimer), appels (composer, décrocher, raccrocher) et toutes les données du réseau 4G et de la carte SIM.
   Un appel entrant s'affiche par-dessus n'importe quel écran.
 - **Photo** : prendre une photo (enregistrée sur la carte SD du module) et la voir.
-- **Fichiers** : parcourir la carte SD, renommer, déplacer, supprimer, créer un dossier, télécharger un fichier sur le téléphone.
+- **Fichiers** : parcourir la carte SD, renommer, déplacer, supprimer, créer un dossier, télécharger un fichier sur le téléphone, et envoyer un fichier du téléphone sur la carte SD (bouton ⬆, 20 Mo maximum).
 - **Lumières et son** : animation en cours et choix parmi les 10, luminosité, volume, faire parler le module.
 - **Batterie** : charge, tension, source d'alimentation, autonomie, historique.
 - **Module** : processeur, mémoires, tâches FreeRTOS, carte SD, version de la carte, redémarrage.

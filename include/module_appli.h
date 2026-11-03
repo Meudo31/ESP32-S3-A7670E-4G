@@ -31,6 +31,7 @@
 #define UUID_OTA_CONTROLE         "7a3b0006-5c1e-4b8a-9f2d-6d6f746f3031"
 #define UUID_OTA_DONNEES          "7a3b0007-5c1e-4b8a-9f2d-6d6f746f3031"
 #define UUID_FICHIER              "7a3b0008-5c1e-4b8a-9f2d-6d6f746f3031"
+#define UUID_FICHIER_ENTRANT      "7a3b0009-5c1e-4b8a-9f2d-6d6f746f3031"
 
 // true si un téléphone est connecté ET authentifié par le code PIN.
 bool appliConnectee();

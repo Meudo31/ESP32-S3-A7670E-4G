@@ -22,6 +22,10 @@ import android.os.Build
 import android.os.ParcelUuid
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -61,6 +65,14 @@ private class ReceptionDeFichier(val chemin: String, val tailleAttendue: Long) {
 }
 
 /** Module trouvé pendant la recherche. */
+/** Envoi d'un fichier du téléphone vers la carte SD du module. */
+sealed interface EtatEnvoi {
+    data object Inactif : EtatEnvoi
+    data class EnCours(val chemin: String, val envoyes: Long, val total: Long) : EtatEnvoi
+    data class Termine(val chemin: String) : EtatEnvoi
+    data class Erreur(val chemin: String, val message: String) : EtatEnvoi
+}
+
 data class ModuleTrouve(val nom: String, val adresse: String, val rssi: Int)
 
 sealed interface EtatConnexion {
@@ -120,6 +132,10 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
 
     private val _logs = MutableStateFlow<List<String>>(emptyList())
     val logs: StateFlow<List<String>> = _logs.asStateFlow()
+
+    private val _envoi = MutableStateFlow<EtatEnvoi>(EtatEnvoi.Inactif)
+    val envoi: StateFlow<EtatEnvoi> = _envoi.asStateFlow()
+    @Volatile private var envoiAnnule = false
 
     private val _reponses = MutableSharedFlow<ReponseCommande>(extraBufferCapacity = 16)
     val reponses: SharedFlow<ReponseCommande> = _reponses.asSharedFlow()
@@ -302,6 +318,9 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
 
         _etat.value = EtatConnexion.Connexion("Lecture des services…")
         attenteServices = CompletableDeferred()
+        // Android garde en mémoire la liste des caractéristiques d'un module appairé : on la vide pour voir
+        // celles ajoutées par une mise à jour du firmware (ex. « Fichier entrant »).
+        try { g.javaClass.getMethod("refresh").invoke(g) } catch (_: Exception) { }
         g.discoverServices()
         val statutServices = withTimeoutOrNull(10_000) { attenteServices?.await() }
         if (statutServices != BluetoothGatt.GATT_SUCCESS || g.getService(Protocole.SERVICE) == null) {
@@ -565,6 +584,65 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
             _telechargement.value = EtatTelechargement.Erreur(chemin, "Le module ne répond pas")
         }
         return resultat
+    }
+
+    /**
+     * Envoie [contenu] dans le fichier [chemin] de la carte SD (un fichier du même nom est remplacé).
+     * Chaque morceau est écrit avec accusé de réception, puis le module vérifie la taille et le CRC32.
+     */
+    suspend fun envoyerUnFichier(chemin: String, contenu: ByteArray): Boolean {
+        if (_envoi.value is EtatEnvoi.EnCours) return false
+        envoiAnnule = false
+        _envoi.value = EtatEnvoi.EnCours(chemin, 0, contenu.size.toLong())
+        val debut = commandeAvecReponse("FICHIER_ENVOYER", "FICHIER_ENVOYER $chemin|${contenu.size}")
+        if (debut == null || !debut.ok) {
+            _envoi.value = EtatEnvoi.Erreur(chemin, debut?.message ?: "Le module ne répond pas")
+            return false
+        }
+        gatt?.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
+        val tailleDUnMorceau = maxOf(20, mtu - 3)
+        var position = 0
+        var erreur: String? = null
+        while (position < contenu.size) {
+            if (envoiAnnule) { erreur = "Annulé"; break }
+            val fin = minOf(position + tailleDUnMorceau, contenu.size)
+            if (!ecrire(Protocole.FICHIER_ENTRANT, contenu.copyOfRange(position, fin))) {
+                erreur = "Connexion perdue pendant l'envoi"
+                break
+            }
+            position = fin
+            _envoi.value = EtatEnvoi.EnCours(chemin, position.toLong(), contenu.size.toLong())
+        }
+        gatt?.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_BALANCED)
+        if (erreur != null) {
+            envoyerCommande("FICHIER_ENVOYER_ANNULER")
+            _envoi.value = EtatEnvoi.Erreur(chemin, erreur)
+            return false
+        }
+        val crc = java.util.zip.CRC32().apply { update(contenu) }.value
+        val fin = commandeAvecReponse("FICHIER_ENVOYER_FIN", "FICHIER_ENVOYER_FIN $crc")
+        _envoi.value = if (fin != null && fin.ok) EtatEnvoi.Termine(chemin)
+                       else EtatEnvoi.Erreur(chemin, fin?.message ?: "Le module ne répond pas")
+        if (fin?.ok == true) actualiserLeDossier()
+        return fin?.ok == true
+    }
+
+    fun annulerLEnvoi() { envoiAnnule = true }
+
+    fun signalerUneErreurDEnvoi(message: String) { _envoi.value = EtatEnvoi.Erreur("", message) }
+
+    fun oublierLEnvoi() { if (_envoi.value !is EtatEnvoi.EnCours) _envoi.value = EtatEnvoi.Inactif }
+
+    /** Envoie une commande et attend la réponse du module (null si rien au bout de 15 s). */
+    private suspend fun commandeAvecReponse(nom: String, commande: String): ReponseCommande? = coroutineScope {
+        val attente = async(start = CoroutineStart.UNDISPATCHED) {
+            withTimeoutOrNull(15_000) { reponses.first { it.commande == nom } }
+        }
+        if (!ecrire(Protocole.COMMANDE, commande.toByteArray(Charsets.UTF_8))) {
+            attente.cancel()
+            return@coroutineScope null
+        }
+        attente.await()
     }
 
     fun annulerLeTelechargement() {

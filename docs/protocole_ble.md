@@ -26,6 +26,7 @@ L'application demande un MTU de 517 octets.
 | `7a3b0006` | OTA contrôle | Write, Notify | `START`, `END`, `ABORT` et leurs réponses |
 | `7a3b0007` | OTA données | Write | Morceaux binaires du firmware |
 | `7a3b0008` | Fichier | Notify | Morceaux binaires d'un fichier téléchargé |
+| `7a3b0009` | Fichier entrant | Write | Morceaux binaires d'un fichier envoyé vers la carte SD |
 
 À la connexion, l'application envoie `HEURE <secondes Unix>` : le module se met à l'heure s'il n'a ni GPS ni réseau.
 
@@ -88,6 +89,9 @@ Les arguments sont séparés du nom par un espace, et entre eux par `|`. Les nom
 | `DOSSIER_CREER chemin` | Crée un dossier (et ses parents) |
 | `FICHIER_TELECHARGER chemin` | Envoie un fichier au téléphone (voir ci-dessous) |
 | `DL_ACK n`, `DL_ANNULER` | Contrôle du téléchargement |
+| `FICHIER_ENVOYER chemin\|taille` | Prépare la réception d'un fichier envoyé par le téléphone (voir ci-dessous) |
+| `FICHIER_ENVOYER_FIN crc32` | Vérifie le fichier reçu et lui donne son nom définitif |
+| `FICHIER_ENVOYER_ANNULER` | Abandonne l'envoi et efface le fichier partiel |
 
 Pour en ajouter une : une ligne dans le tableau `COMMANDES` de `module_appli.cpp`, puis un bouton dans l'écran Android concerné.
 
@@ -97,6 +101,14 @@ Pour en ajouter une : une ligne dans le tableau `COMMANDES` de `module_appli.cpp
 2. Le module répond `dl_debut` (chemin, taille), puis envoie le fichier en morceaux binaires sur la caractéristique Fichier.
 3. Tous les 8 morceaux, il attend que l'application envoie `DL_ACK <octets reçus>`, pour ne pas saturer la liaison.
 4. À la fin, `dl_fin` donne le CRC32 du fichier ; l'application le compare au sien. `DL_ANNULER` arrête le transfert.
+
+## Envoi d'un fichier du téléphone vers la carte SD
+
+1. L'application envoie `FICHIER_ENVOYER /sons/sms.wav|48210` et attend la réponse `rep` (ok, ou la raison : place, carte absente...).
+2. Elle écrit le contenu par morceaux de (MTU − 3) octets sur la caractéristique Fichier entrant, chaque écriture avec accusé de réception.
+   Le module les écrit dans `/sons/sms.wav.part`, par paquets de 8 Ko.
+3. Elle envoie `FICHIER_ENVOYER_FIN <crc32>`. Le module vérifie la taille et le CRC32, remplace un éventuel fichier du même nom
+   et renomme `.part` en nom définitif. Une déconnexion ou `FICHIER_ENVOYER_ANNULER` efface le fichier partiel.
 
 ## Mise à jour du firmware (OTA)
 
