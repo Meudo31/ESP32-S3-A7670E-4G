@@ -112,7 +112,9 @@ fun AppliMoto(
         }
     }
 
-    val connecte = etat == EtatConnexion.Connecte
+    // Pendant une reconnexion automatique, on garde les écrans et les dernières données affichées.
+    val enReconnexion = etat is EtatConnexion.Reconnexion
+    val connecte = etat == EtatConnexion.Connecte || enReconnexion
     ModalNavigationDrawer(
         drawerState = tiroir,
         gesturesEnabled = connecte,
@@ -176,7 +178,7 @@ fun AppliMoto(
 
     // Appel entrant : fenêtre par-dessus n'importe quel écran.
     val appel = etatModule.appel
-    if (connecte && appel != null && appel.etat == EtatAppel.Etat.SONNERIE) {
+    if (etat == EtatConnexion.Connecte && appel != null && appel.etat == EtatAppel.Etat.SONNERIE) {
         AlertDialog(
             onDismissRequest = {},
             title = { Text("📞 Appel entrant") },
@@ -196,6 +198,7 @@ private fun texteEtat(etat: EtatConnexion): String = when (etat) {
     EtatConnexion.Deconnecte -> "Déconnecté"
     EtatConnexion.Recherche -> "Recherche du module…"
     is EtatConnexion.Connexion -> etat.etape
+    is EtatConnexion.Reconnexion -> "⚠️ Liaison perdue, reconnexion… (essai ${etat.tentative})"
     EtatConnexion.Connecte -> "Connecté"
     is EtatConnexion.Erreur -> etat.message
 }

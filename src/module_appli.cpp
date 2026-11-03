@@ -66,11 +66,16 @@ const uint32_t PERIODE_LENTE      = 15000;   // néopixels, carte SD, SIM, appel
 
 // ─────────────────────────────── Envoi de notifications ───────────────────────────────
 
+const uint32_t PAUSE_ENTRE_DEUX_NOTIFICATIONS_MS = 8;
+
 void notifier(BLECharacteristic* caracteristique, const uint8_t* octets, size_t taille) {
     if (!telephoneConnecte || !telephoneAuthentifie || caracteristique == nullptr) return;
     xSemaphoreTake(verrouDesNotifications, portMAX_DELAY);
     caracteristique->setValue((uint8_t*)octets, taille);
     caracteristique->notify();
+    // Petite pause entre deux notifications : sans elle, une rafale (tout l'état d'un coup, une page de
+    // dossier, un fichier) remplit la file d'envoi du Bluetooth et le téléphone finit par couper la liaison.
+    vTaskDelay(pdMS_TO_TICKS(PAUSE_ENTRE_DEUX_NOTIFICATIONS_MS));
     xSemaphoreGive(verrouDesNotifications);
 }
 
@@ -391,16 +396,22 @@ class RappelsDuServeur : public BLEServerCallbacks {
         telephoneConnecte      = true;
         telephoneAuthentifie   = false;
         identifiantDeConnexion = parametres->connect.conn_id;
+        // Paramètres de liaison plus tolérants : intervalle 15 à 30 ms, et la liaison n'est déclarée perdue
+        // qu'après 6 s sans échange (au lieu de quelques centaines de ms avec certains téléphones).
+        serveur->updateConnParams(parametres->connect.remote_bda, 12, 24, 0, 600);
         // Demande le chiffrement : le téléphone affiche la saisie du code PIN s'il n'est pas encore appairé.
         esp_ble_set_encryption(parametres->connect.remote_bda, ESP_BLE_SEC_ENCRYPT_MITM);
         Serial.println("[APPLI] Téléphone connecté, authentification...");
     }
-    void onDisconnect(BLEServer*) override {
+    void onDisconnect(BLEServer*, esp_ble_gatts_cb_param_t* parametres) override {
         telephoneConnecte    = false;
         telephoneAuthentifie = false;
         annulerLaMiseAJourEnCours();
         annulerLeTelechargement();
-        Serial.println("[APPLI] Téléphone déconnecté.");
+        // La raison est notée dans le journal du jour pour comprendre les coupures :
+        // 0x08 = plus de signal (trop loin, perturbations), 0x13 = coupé par le téléphone,
+        // 0x16 = coupé par le module, 0x3E = liaison jamais établie.
+        ecrireDansLeJournal("[APPLI] Téléphone déconnecté (raison 0x%02X).", parametres->disconnect.reason);
         BLEDevice::startAdvertising();
     }
 };
