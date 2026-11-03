@@ -25,7 +25,7 @@ import fr.meudo.motoesp32.ble.EtatOta
 fun EcranMiseAJour(modifier: Modifier, viewModel: MotoViewModel) {
     val client = viewModel.client
     val ota by client.ota.collectAsStateWithLifecycle()
-    val telemetrie by client.telemetrie.collectAsStateWithLifecycle()
+    val etatModule by client.etatModule.collectAsStateWithLifecycle()
     val choixFichier = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) viewModel.mettreAJour(uri)
     }
@@ -35,14 +35,15 @@ fun EcranMiseAJour(modifier: Modifier, viewModel: MotoViewModel) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Carte("Firmware actuel") {
-            val s = telemetrie.systeme
+            val s = etatModule.systeme
             Text(if (s == null) "Version inconnue" else "${s.versionFirmware} — compilé le ${s.compilation}")
         }
 
         Carte("Mettre à jour par Bluetooth") {
             Text(
-                "1. Compiler le firmware avec PlatformIO.\n" +
-                    "2. Copier .pio/build/esp32-s3-devkitc-1/firmware.bin sur le téléphone.\n" +
+                "1. Récupérer firmware.bin : artefact « firmware-esp32 » de GitHub Actions, " +
+                    "ou .pio/build/esp32-s3-devkitc-1/firmware.bin après une compilation PlatformIO.\n" +
+                    "2. Copier firmware.bin sur le téléphone.\n" +
                     "3. Choisir ce fichier ci-dessous. Garder le téléphone près de la moto (1 à 3 minutes).",
                 style = MaterialTheme.typography.bodyMedium,
             )

@@ -42,6 +42,24 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+private const val MORCEAUX_ENTRE_DEUX_CONFIRMATIONS = 8
+
+/** Contenu d'un dossier de la carte SD, tel que reçu du module. */
+data class ContenuDUnDossier(val chemin: String, val elements: List<ElementFichier>, val chargement: Boolean)
+
+sealed interface EtatTelechargement {
+    data object Inactif : EtatTelechargement
+    data class EnCours(val chemin: String, val recus: Long, val total: Long) : EtatTelechargement
+    data class Termine(val chemin: String, val contenu: ByteArray) : EtatTelechargement
+    data class Erreur(val chemin: String, val message: String) : EtatTelechargement
+}
+
+private class ReceptionDeFichier(val chemin: String, val tailleAttendue: Long) {
+    val contenu = java.io.ByteArrayOutputStream()
+    val crc = java.util.zip.CRC32()
+    var morceauxDepuisLaDerniereConfirmation = 0
+}
+
 /** Module trouvé pendant la recherche. */
 data class ModuleTrouve(val nom: String, val adresse: String, val rssi: Int)
 
@@ -80,8 +98,23 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
     private val _modules = MutableStateFlow<List<ModuleTrouve>>(emptyList())
     val modules: StateFlow<List<ModuleTrouve>> = _modules.asStateFlow()
 
-    private val _telemetrie = MutableStateFlow(Telemetrie())
-    val telemetrie: StateFlow<Telemetrie> = _telemetrie.asStateFlow()
+    private val _etatModule = MutableStateFlow(EtatDuModule())
+    /** Dernier état connu de chaque partie du module (GPS, batterie, réseau...). */
+    val etatModule: StateFlow<EtatDuModule> = _etatModule.asStateFlow()
+
+    private val _evenements = MutableSharedFlow<Evenement>(extraBufferCapacity = 64)
+    /** Événements ponctuels : SMS reçu, photo prise, page de dossier... */
+    val evenements: SharedFlow<Evenement> = _evenements.asSharedFlow()
+
+    private val _sms = MutableStateFlow<List<Sms>>(emptyList())
+    /** SMS stockés dans la carte SIM (après « Actualiser ») et SMS reçus depuis. */
+    val sms: StateFlow<List<Sms>> = _sms.asStateFlow()
+
+    private val _dossier = MutableStateFlow(ContenuDUnDossier("/", emptyList(), chargement = false))
+    val dossier: StateFlow<ContenuDUnDossier> = _dossier.asStateFlow()
+
+    private val _telechargement = MutableStateFlow<EtatTelechargement>(EtatTelechargement.Inactif)
+    val telechargement: StateFlow<EtatTelechargement> = _telechargement.asStateFlow()
 
     private val _logs = MutableStateFlow<List<String>>(emptyList())
     val logs: StateFlow<List<String>> = _logs.asStateFlow()
@@ -184,6 +217,11 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
         attenteMtu?.complete(-1)
         attenteServices?.complete(-1)
         attenteAppairage?.complete(false)
+        attenteTelechargement?.complete(null)
+        receptionEnCours = null
+        if (_telechargement.value is EtatTelechargement.EnCours) {
+            _telechargement.value = EtatTelechargement.Erreur("", "Connexion perdue")
+        }
     }
 
     /** Étapes après la connexion : MTU, services, appairage par code PIN, notifications. */
@@ -210,13 +248,15 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
         }
 
         _etat.value = EtatConnexion.Connexion("Abonnement aux données…")
-        for (uuid in listOf(Protocole.TELEMETRIE, Protocole.REPONSE, Protocole.LOGS, Protocole.OTA_CTRL)) {
+        for (uuid in listOf(Protocole.DONNEES, Protocole.REPONSE, Protocole.JOURNAL, Protocole.OTA_CTRL, Protocole.FICHIER)) {
             if (!activerNotifications(g, uuid)) {
                 echec("Impossible de recevoir les données (appairage à refaire ?)")
                 return
             }
         }
         _etat.value = EtatConnexion.Connecte
+        // Le téléphone donne l'heure au module (utile tant que le GPS et le réseau ne l'ont pas fait).
+        envoyerCommande("HEURE ${System.currentTimeMillis() / 1000}")
         envoyerCommande("STATUS")
     }
 
@@ -315,6 +355,11 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
 
     fun effacerLogs() { _logs.value = emptyList() }
 
+    /** Commande avec arguments séparés par « | » (ex. SMS_ENVOYER +336...|Bonjour). */
+    fun envoyerCommande(nom: String, vararg arguments: String) {
+        envoyerCommande(if (arguments.isEmpty()) nom else "$nom ${arguments.joinToString("|")}")
+    }
+
     // ─────────────────────────────── Mise à jour du firmware ───────────────────────────────
 
     /** Envoie un firmware (.bin produit par PlatformIO) au module. */
@@ -375,12 +420,116 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
     // ─────────────────────────────── Callbacks Android ───────────────────────────────
 
     private fun recevoir(uuid: java.util.UUID, valeur: ByteArray) {
-        val texte = valeur.toString(Charsets.UTF_8)
         when (uuid) {
-            Protocole.TELEMETRIE -> _telemetrie.update { Protocole.appliquer(it, texte) }
-            Protocole.REPONSE -> Protocole.lireReponse(texte)?.let { _reponses.tryEmit(it) }
-            Protocole.LOGS -> _logs.update { (it + "${formatHeure.format(Date())}  ${texte.trimEnd()}").takeLast(500) }
-            Protocole.OTA_CTRL -> messagesOta.trySend(texte.trim())
+            Protocole.FICHIER -> recevoirUnMorceauDeFichier(valeur)
+            Protocole.JOURNAL -> {
+                val texte = valeur.toString(Charsets.UTF_8)
+                _logs.update { (it + "${formatHeure.format(Date())}  ${texte.trimEnd()}").takeLast(500) }
+            }
+            Protocole.OTA_CTRL -> messagesOta.trySend(valeur.toString(Charsets.UTF_8).trim())
+            Protocole.DONNEES, Protocole.REPONSE -> {
+                val json = Protocole.lireJson(valeur.toString(Charsets.UTF_8)) ?: return
+                _etatModule.update { Protocole.appliquer(it, json) }
+                Protocole.lireEvenement(json)?.let { traiterUnEvenement(it) }
+            }
+        }
+    }
+
+    private fun traiterUnEvenement(evenement: Evenement) {
+        when (evenement) {
+            is Evenement.Reponse -> {
+                if (evenement.commande != "DL_ACK") _reponses.tryEmit(ReponseCommande(evenement.commande, evenement.ok, evenement.message))
+                if (evenement.commande == "FICHIERS" && !evenement.ok) _dossier.update { it.copy(chargement = false) }
+            }
+            Evenement.DebutDeLaListeDesSms -> _sms.value = emptyList()
+            is Evenement.SmsDeLaListe -> _sms.update { liste -> (liste.filter { it.numeroDansLaSim != evenement.sms.numeroDansLaSim } + evenement.sms) }
+            is Evenement.SmsRecu -> _sms.update { liste -> liste.filter { it.numeroDansLaSim != evenement.sms.numeroDansLaSim } + evenement.sms }
+            is Evenement.PageDeDossier -> _dossier.update { actuel ->
+                val dejaRecus = if (actuel.chemin == evenement.chemin && actuel.chargement) actuel.elements else emptyList()
+                ContenuDUnDossier(
+                    evenement.chemin,
+                    (dejaRecus + evenement.elements).sortedWith(compareBy({ !it.estUnDossier }, { it.nom.lowercase() })),
+                    chargement = !evenement.derniere,
+                )
+            }
+            is Evenement.DebutTelechargement -> debuterLaReception(evenement)
+            is Evenement.FinTelechargement -> terminerLaReception(evenement)
+            else -> {}
+        }
+        _evenements.tryEmit(evenement)
+    }
+
+    // ─────────────────────────────── Carte SD : dossiers et téléchargements ───────────────────────────────
+
+    fun ouvrirUnDossier(chemin: String) {
+        _dossier.value = ContenuDUnDossier(chemin, emptyList(), chargement = true)
+        envoyerCommande("FICHIERS $chemin")
+    }
+
+    fun actualiserLeDossier() = ouvrirUnDossier(_dossier.value.chemin)
+
+    private var receptionEnCours: ReceptionDeFichier? = null
+    private var attenteTelechargement: CompletableDeferred<ByteArray?>? = null
+
+    /** Télécharge un fichier de la carte SD. Renvoie son contenu vérifié, ou null en cas d'échec. */
+    suspend fun telecharger(chemin: String): ByteArray? {
+        if (_telechargement.value is EtatTelechargement.EnCours) return null
+        val attente = CompletableDeferred<ByteArray?>()
+        attenteTelechargement = attente
+        _telechargement.value = EtatTelechargement.EnCours(chemin, 0, 0)
+        gatt?.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
+        envoyerCommande("FICHIER_TELECHARGER $chemin")
+        val resultat = withTimeoutOrNull(10 * 60_000) { attente.await() }
+        gatt?.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_BALANCED)
+        attenteTelechargement = null
+        if (resultat == null && _telechargement.value is EtatTelechargement.EnCours) {
+            _telechargement.value = EtatTelechargement.Erreur(chemin, "Le module ne répond pas")
+        }
+        return resultat
+    }
+
+    fun annulerLeTelechargement() {
+        envoyerCommande("DL_ANNULER")
+        attenteTelechargement?.complete(null)
+        receptionEnCours = null
+        _telechargement.value = EtatTelechargement.Inactif
+    }
+
+    fun oublierLeTelechargement() {
+        if (_telechargement.value !is EtatTelechargement.EnCours) _telechargement.value = EtatTelechargement.Inactif
+    }
+
+    private fun debuterLaReception(debut: Evenement.DebutTelechargement) {
+        receptionEnCours = ReceptionDeFichier(debut.chemin, debut.taille)
+        _telechargement.value = EtatTelechargement.EnCours(debut.chemin, 0, debut.taille)
+    }
+
+    private fun recevoirUnMorceauDeFichier(morceau: ByteArray) {
+        val reception = receptionEnCours ?: return
+        reception.contenu.write(morceau)
+        reception.crc.update(morceau)
+        reception.morceauxDepuisLaDerniereConfirmation++
+        val recus = reception.contenu.size().toLong()
+        // Le module attend une confirmation tous les 8 morceaux, et à la fin du fichier.
+        if (reception.morceauxDepuisLaDerniereConfirmation >= MORCEAUX_ENTRE_DEUX_CONFIRMATIONS || recus >= reception.tailleAttendue) {
+            reception.morceauxDepuisLaDerniereConfirmation = 0
+            envoyerCommande("DL_ACK $recus")
+        }
+        _telechargement.value = EtatTelechargement.EnCours(reception.chemin, recus, reception.tailleAttendue)
+    }
+
+    private fun terminerLaReception(fin: Evenement.FinTelechargement) {
+        val reception = receptionEnCours
+        receptionEnCours = null
+        val octets = reception?.contenu?.toByteArray()
+        val verifie = fin.ok && octets != null && octets.size.toLong() == fin.taille && reception.crc.value == fin.crc
+        if (verifie) {
+            _telechargement.value = EtatTelechargement.Termine(fin.chemin, octets!!)
+            attenteTelechargement?.complete(octets)
+        } else {
+            val message = if (!fin.ok) fin.message else "Fichier abîmé pendant le transfert (réessayer)"
+            _telechargement.value = EtatTelechargement.Erreur(fin.chemin, message)
+            attenteTelechargement?.complete(null)
         }
     }
 
