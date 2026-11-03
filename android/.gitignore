@@ -9,3 +9,6 @@ captures/
 .cxx/
 *.keystore
 *.jks
+
+# Clé de TEST partagée (voir app/build.gradle.kts), pour que les APK de GitHub se mettent à jour
+!app/cle-de-test.keystore

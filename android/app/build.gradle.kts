@@ -12,8 +12,20 @@ android {
         applicationId = "fr.meudo.motoesp32"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.3.3"
+        versionCode = 9
+        versionName = "0.3.4"
+    }
+
+    // Clé de signature de TEST, la même à chaque compilation : sans elle, GitHub crée une clé différente
+    // à chaque fois et Android refuse la mise à jour (« package en conflit »). Ce n'est pas une clé
+    // de publication : elle ne sert qu'à l'APK de test (mot de passe « android », comme toute clé de débogage).
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("cle-de-test.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
 
     buildTypes {
