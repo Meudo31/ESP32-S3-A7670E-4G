@@ -107,7 +107,7 @@ void envoyerLaCarteEtLaCarteSD() {
     envoyerUnDocument(d);
 }
 
-// Liste des tâches, par paquets de 5 : {"t":"taches","fin":0,"l":[["GPS",5120,1800,1,0],...]}
+// Liste des tâches, par paquets de 5 : {"t":"taches","debut":1,"fin":0,"l":[["GPS",5120,1800,1,0],...]}
 void envoyerLesTaches() {
     const int nombre = nombreDeTachesSurveillees();
     for (int premiere = 0; premiere < nombre; premiere += 5) {

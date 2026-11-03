@@ -4,10 +4,21 @@ Application Kotlin / Jetpack Compose pour piloter le module de la moto en Blueto
 
 ## Fonctions
 
-- **Tableau de bord** : données moto (bus CAN), position GPS (ouverture dans une appli de carte), batterie du boîtier, réseau 4G, accéléromètre, état du module.
-- **Commandes** : photo, actualisation GPS, actualisation des données, test de liaison, redémarrage, commande libre.
-- **Logs** : journal du module en direct.
+Menu latéral avec un écran par fonction :
+
+- **Tableau de bord** : résumé de tout le module (batterie, GPS, 4G, animation, appel en cours).
+- **GPS** : carte OpenStreetMap avec le trajet, compteur de vitesse, boussole, altitude, satellites par constellation, précision, courbes.
+- **Téléphone** : SMS (lire, envoyer, supprimer), appels (composer, décrocher, raccrocher) et toutes les données du réseau 4G et de la carte SIM.
+  Un appel entrant s'affiche par-dessus n'importe quel écran.
+- **Photo** : prendre une photo (enregistrée sur la carte SD du module) et la voir.
+- **Fichiers** : parcourir la carte SD, renommer, déplacer, supprimer, créer un dossier, télécharger un fichier sur le téléphone.
+- **Lumières et son** : animation en cours et choix parmi les 10, luminosité, volume, faire parler le module.
+- **Batterie** : charge, tension, source d'alimentation, autonomie, historique.
+- **Module** : processeur, mémoires, tâches FreeRTOS, carte SD, version de la carte, redémarrage.
+- **Journal** : journal du module en direct.
 - **Mise à jour** : envoi d'un nouveau firmware par Bluetooth (OTA), avec vérification MD5.
+
+La carte a besoin d'Internet sur le téléphone pour charger les fonds de carte.
 
 Le protocole est décrit dans [`docs/protocole_ble.md`](../docs/protocole_ble.md).
 
@@ -37,6 +48,10 @@ app/src/main/java/fr/meudo/motoesp32/
 ├── MainActivity.kt          Permissions Bluetooth et lancement de l'interface
 ├── MotoViewModel.kt         Dernier module utilisé, lecture du fichier firmware
 ├── ble/Protocole.kt         UUID et lecture des messages JSON (testé dans src/test)
-├── ble/MotoBleClient.kt     Recherche, connexion, appairage, commandes, mise à jour OTA
-└── ui/                      Écrans Compose (tableau de bord, commandes, logs, mise à jour)
+├── ble/MotoBleClient.kt     Recherche, connexion, appairage, commandes, téléchargements, mise à jour OTA
+└── ui/
+    ├── AppliMoto.kt         Menu latéral, connexion, appel entrant
+    ├── Graphiques.kt        Jauges, boussole, barres, courbes (dessinés avec Canvas)
+    ├── Composants.kt        Cartes et lignes « libellé : valeur »
+    └── Ecran*.kt            Un fichier par écran
 ```

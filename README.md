@@ -1,26 +1,25 @@
 # ESP32-Moto
 
-Boîtier connecté pour moto, basé sur la carte **Waveshare ESP32-S3 A7670E 4G**.
-Il suit la position de la moto, la photographie, lit les données du bus CAN et se pilote par SMS, Wi-Fi ou Bluetooth.
+Boîtier connecté pour moto, basé sur la carte **Waveshare ESP32-S3 A7670E 4G**, piloté par une application Android en Bluetooth.
 
-> 🚧 Projet en cours de développement : certains modules sont encore expérimentaux (voir [État des modules](#état-des-modules)).
+> 🚧 Projet en cours de développement : le firmware compile, mais plusieurs fonctions restent à valider sur la carte (voir [À vérifier sur la carte](#à-vérifier-sur-la-carte)).
 
 ---
 
 ## Fonctionnalités
 
-- **Localisation GNSS** (GPS + Galileo + GLONASS) par le modem A7670E
-- **Commandes par SMS** depuis un numéro autorisé : `Photo`, `GPS`, `Status`, `Reboot`
-- **Envoi de la position par SMS** (lien Google Maps, vitesse, direction)
-- **Photo** (caméra OV) envoyée par MMS, enregistrée sur carte SD ou transmise en Wi-Fi / Bluetooth
-- **Suivi de la consommation data** du forfait 4G
-- **Lecture du bus CAN** de la moto (frein, ABS, embrayage, béquille, feux…)
-- **Accéléromètre** ADXL345 avec interruption de mouvement
-- **Point d'accès Wi-Fi** avec page web de données et serveur FTP pour la carte SD
-- **Application Android** en Bluetooth Low Energy : données en direct, commandes, logs et mise à jour du firmware (voir [`android/`](android/README.md) et [`docs/protocole_ble.md`](docs/protocole_ble.md))
-- **Journalisation** sur le port série et sur la carte SD
-- **Jauge de batterie** MAX17048
-- **LED RGB** WS2812B d'état
+- **GPS** (GPS, GLONASS, Galileo, BeiDou) par le modem A7670E : position, vitesse, altitude, cap, satellites, précision
+- **4G** : SMS envoyés et reçus, appels sortants et entrants, toutes les informations du réseau et de la carte SIM
+- **Photo** enregistrée sur la carte SD, un dossier par jour : `/photos/jj-mm-aaaa/jj-mm-aaaa_hh-mm-ss_ESP32-A7670.jpg`
+- **Bande de 14 LED NeoPixel** (GPIO 41) avec 10 animations, changées par le **bouton** (GPIO 21) ou l'application
+- **Haut-parleur** du modem : nom de l'animation prononcé à chaque changement, son à l'arrivée d'un SMS, sonnerie et voix de l'appelant
+- **Batterie** : charge, tension, en charge ou non, source d'alimentation, autonomie (jauge MAX17048)
+- **Journal** du module : un fichier par jour sur la carte SD (`/journaux/jj-mm-aaaa.log`), aussi visible en direct dans l'application
+- **Explorateur de la carte SD** dans l'application : parcourir, renommer, déplacer, supprimer, créer des dossiers, télécharger
+- **Mise à jour du firmware** par Bluetooth depuis l'application
+- **État du module** : processeur, mémoires, tâches FreeRTOS, version de la carte (V1 ou V2, détectée au démarrage)
+
+L'application Android est dans [`android/`](android/README.md), le protocole Bluetooth dans [`docs/protocole_ble.md`](docs/protocole_ble.md).
 
 ---
 
@@ -28,132 +27,124 @@ Il suit la position de la moto, la photographie, lit les données du bus CAN et 
 
 | Élément | Détail |
 |---|---|
-| Carte | Waveshare ESP32-S3 A7670E 4G (ESP32-S3, 16 Mo de flash, PSRAM) |
-| Modem | SIMCom A7670E (LTE Cat-1 / 2G / GNSS), relié en **USB** à l'ESP32-S3 |
+| Carte | Waveshare ESP32-S3 A7670E 4G (ESP32-S3, 16 Mo de flash, PSRAM), version V1 ou V2 |
+| Modem | SIMCom A7670E (LTE Cat-1 / 2G / GNSS), relié en UART à l'ESP32-S3 |
 | Antennes | LTE et GNSS (connecteurs IPEX) |
 | Caméra | OV2640 / OV5640 (connecteur 24 broches) |
 | Stockage | Carte micro-SD |
 | Batterie | Li-ion 18650 |
+| Haut-parleur | Sur les pastilles SPK du modem |
+| Bande LED | 14 × WS2812B sur GPIO 41 |
+| Bouton | Entre GPIO 21 et la masse (GND) |
 | Alimentation moto | 12 V sur l'entrée solaire (cavalier MPPT SET sur 12 V) |
-| Accéléromètre | ADXL345 |
-| Bus CAN | Transceiver WCMCU-230 (SN65HVD230) |
-| Micro | INMP441 (I2S) |
 
 ### Interrupteurs DIP (dos de la carte)
 
 | DIP | Position | Rôle |
 |---|---|---|
 | CAM | ON | Alimente la caméra |
-| HUB | ON | Alimente le hub USB |
 | 4G | ON | Alimente et démarre le modem |
-| USB | **OFF** | Relie l'USB du modem à l'ESP32-S3 (ON = au connecteur USB-C) |
 
-### Broches principales
+### Broches
+
+Communes aux deux versions (voir [`include/configuration.h`](include/configuration.h)) :
 
 | Fonction | GPIO |
 |---|---|
-| Modem A7670E (USB natif) | 19 (D−), 20 (D+) |
+| Bande NeoPixel | 41 |
+| Bouton des animations | 21 |
+| Modem A7670E (UART, sens détecté au démarrage) | 17, 18 |
 | Carte SD (SDMMC 1 bit) | CLK 5, CMD 4, D0 6, CD 46 |
-| LED RGB WS2812B | 38 |
-| Jauge batterie MAX17048 (I2C) | SDA 15, SCL 16 |
+| LED RGB de la carte | 38 |
+| Caméra SIOD / SIOC, D0 à D7 | 15 / 16, 7 à 14 |
 | Moniteur série (UART0, via CH343) | TX 43, RX 44 |
 
-Le détail du câblage des modules externes est dans les commentaires de [`include/main.h`](include/main.h).
+Qui changent entre V1 et V2 (voir [`include/module_carte.h`](include/module_carte.h)) :
+
+| Fonction | V1 | V2 |
+|---|---|---|
+| Jauge batterie MAX17048 (SDA / SCL) | 3 / 2 | 15 / 16 |
+| Caméra XCLK, VSYNC, HREF, PCLK | 34, 36, 35, 37 | 39, 42, **41**, 46 |
+
+Au démarrage, le module cherche la jauge sur 15/16 (V2), puis sur 3/2 (V1), puis regarde la taille de la PSRAM.
+
+> ⚠️ **Sur la V2, la caméra utilise le GPIO 41, comme la bande NeoPixel.** Les deux ne peuvent pas fonctionner ensemble :
+> le firmware garde la bande et désactive la caméra. Pour avoir les deux, brancher la bande sur un autre GPIO libre
+> (par exemple 40) et changer `BROCHE_BANDE_NEOPIXELS` dans `include/configuration.h`.
 
 ---
 
 ## Architecture logicielle
 
-Le programme repose sur **FreeRTOS**, avec des tâches réparties sur les deux cœurs :
-
-- **Cœur 0 (réseau)** : réception des SMS, envoi des SMS et MMS, serveur web, Bluetooth, bus CAN
-- **Cœur 1 (traitement)** : GPS, caméra, carte SD, logs, accéléromètre, LED
-
-Les tâches communiquent par **files** (`xQueue`) et **notifications** (`xTaskNotify`). Chaque fonction matérielle est isolée dans un module :
+Chaque fonction est un **module** (`src/module_xxx.cpp` + `include/module_xxx.h`) qui tourne dans **sa propre tâche FreeRTOS**.
+Le code est écrit en français, avec des noms explicites, pour se lire presque comme un livre.
+Les tâches de communication sont sur le cœur 0, les traitements sur le cœur 1.
 
 ```
 src/
-├── main.cpp               Initialisation et lancement des tâches
-├── modem_usb.cpp          Liaison USB hôte avec le modem A7670E (classe ModemUSB)
-├── module_sms.cpp         Initialisation du modem, SMS, MMS, consommation data
-├── module_gps.cpp         Position GNSS
-├── module_camera.cpp      Prise de photo (+ données EXIF)
-├── module_SD.cpp          Stockage sur carte SD
-├── module_logs.cpp        Journalisation (série + SD)
-├── module_wifi.cpp        Point d'accès, page web, serveur FTP
-├── module_bluetooth.cpp   Logs en Bluetooth Low Energy
-├── module_CANbus.cpp      Écoute et décodage du bus CAN
-├── module_gyroscope.cpp   Accéléromètre ADXL345
-├── module_batterie.cpp    Jauge de batterie MAX17048
-├── module_LED_ESP32.cpp   LED RGB d'état
-├── module_DateHeure.cpp   Date et heure système
-├── module_display.cpp     Écran TFT (désactivé)
-├── module_hautParleur.cpp Messages audio (désactivé)
-└── module_test_micro.cpp  Test du micro I2S
+├── main.cpp                         Démarre les modules dans l'ordre, puis laisse FreeRTOS travailler
+├── module_carte.cpp                 Détecte la version de la carte (V1 ou V2) et ses broches
+├── module_systeme.cpp               Processeur, mémoires, tâches surveillées, compteur de démarrages
+├── module_journal.cpp               Journal : série, carte SD (un fichier par jour) et application
+├── module_carte_sd.cpp              Accès à la carte SD partagé entre les tâches
+├── module_horloge.cpp               Heure du module (GPS, puis réseau, puis téléphone)
+├── module_modem.cpp                 Seul module qui parle au modem (commandes AT, notifications)
+├── module_reseau_4g.cpp             Réseau 4G, carte SIM, signal
+├── module_sms.cpp                   Envoi et réception des SMS
+├── module_appels.cpp                Appels entrants et sortants
+├── module_haut_parleur.cpp          Voix de synthèse, sons, sonnerie, volume
+├── module_gps.cpp                   Position GNSS
+├── module_camera.cpp                Photos sur la carte SD
+├── module_neopixels.cpp             Les 10 animations de la bande LED
+├── module_bouton.cpp                Bouton : appui court = animation suivante, appui long = allumer / éteindre
+├── module_batterie.cpp              Jauge de batterie et source d'alimentation
+├── module_explorateur_fichiers.cpp  Fichiers de la carte SD pour l'application
+├── module_mise_a_jour.cpp           Mise à jour du firmware par Bluetooth
+├── module_appli.cpp                 Bluetooth : données, commandes, journal vers l'application
+└── outils_texte.cpp                 Conversions de texte (UCS2 du modem, découpage des champs)
 ```
+
+L'ancien firmware (liaison USB avec le modem, MMS, Wi-Fi, bus CAN, accéléromètre) est conservé dans [`archives/`](archives/) pour en reprendre des morceaux plus tard.
 
 ---
 
 ## Compilation
 
-1. Installer **VS Code** et l'extension **PlatformIO**.
-2. Cloner le dépôt et l'ouvrir dans VS Code.
-3. Vérifier le type de PSRAM de la puce dans `platformio.ini` :
+**Sans rien installer** : à chaque modification, GitHub compile le firmware (onglet **Actions** → « Firmware ESP32 »).
+L'artefact **firmware-esp32** contient `firmware.bin`, à envoyer par l'application (écran Mise à jour).
+
+**Avec PlatformIO** (VS Code) :
+1. Copier `include/secrets.example.h` en `include/secrets.h` et choisir le code PIN Bluetooth (`SECRET_BLE_PIN`).
+   Ce fichier n'est jamais envoyé sur GitHub.
+2. Vérifier le type de PSRAM dans `platformio.ini` :
    - ESP32-S3**R8** (8 Mo, OPI) : `board_build.arduino.memory_type = qio_opi`
    - ESP32-S3**R2** (2 Mo, Quad) : `board_build.arduino.memory_type = qio_qspi`
-4. Brancher la carte sur le port USB-C (convertisseur CH343).
-5. **Upload**, puis **Monitor** (115200 bauds).
+3. Brancher la carte sur le port USB-C (convertisseur CH343), **Upload**, puis **Monitor** (115200 bauds).
 
 Si le téléversement échoue : maintenir **BOOT**, appuyer brièvement sur **RESET**, relâcher **BOOT** au début du téléversement.
 
-> `ARDUINO_USB_CDC_ON_BOOT=0` est obligatoire : l'USB natif de l'ESP32-S3 est réservé au modem, et `Serial` passe par le CH343.
-
----
-
-## Configuration
-
-Dans [`src/module_sms.cpp`](src/module_sms.cpp) :
-
-- `monOperateur` : opérateur de la carte SIM (APN et paramètres MMS)
-- `listeNumerosTelephone` : numéros autorisés à envoyer des commandes
-
 La carte SIM doit avoir son **code PIN désactivé**.
 
-> ⚠️ Ne publiez pas de numéros de téléphone, mots de passe ou identifiants dans le code si le dépôt devient public : placez-les dans un fichier exclu par `.gitignore`.
+### Sons personnalisés (facultatif)
+
+Déposer `/sons/sms.wav` et `/sons/sonnerie.wav` (WAV mono 8 kHz) sur la carte SD, puis « Installer les sons » dans l'application.
+Sans eux, le module prononce une phrase à la place.
 
 ---
 
-## Commandes SMS
+## À vérifier sur la carte
 
-Envoyer depuis un numéro autorisé :
+Ces points ne peuvent pas être testés sans la carte :
 
-| SMS | Action |
-|---|---|
-| `Photo` | Prend une photo et l'envoie par MMS |
-| `GPS` | Renvoie la position par SMS |
-| `Status` | État du système *(à développer)* |
-| `Reboot` | Redémarre la carte |
-
----
-
-## État des modules
-
-| Module | État |
-|---|---|
-| Modem USB, SMS | Réécrit, à valider sur la carte |
-| GPS | En cours |
-| MMS photo | En cours |
-| Caméra, carte SD, logs | En cours |
-| Wi-Fi, FTP, Bluetooth | En cours |
-| Bus CAN, accéléromètre | En cours |
-| Écran, haut-parleur | Désactivés |
-
-La liste détaillée des évolutions prévues est dans [`Liste_des_taches_a_faire.txt`](Liste_des_taches_a_faire.txt).
-
-### Points connus
-
-- Plusieurs tâches lisent le modem en même temps : la réception des SMS peut « voler » les réponses destinées au GPS ou au MMS. Une tâche unique de gestion du modem est prévue.
-- Les broches caméra notées dans `main.h` sont à vérifier avec la documentation Waveshare de la carte V2.
+- **Modem** : la liaison UART 17/18 (le sens est détecté automatiquement) ; s'il ne démarre pas seul, renseigner `BROCHE_ALLUMAGE_MODEM`.
+- **Haut-parleur** : branché sur les pastilles SPK du modem ; la voix de synthèse (`AT+CTTS`) n'existe pas sur toutes les variantes de l'A7670E
+  (la variante « LNXY-UBL » n'a pas du tout de voix). L'application affiche si le modem sait téléphoner.
+- **Caméra** : impossible sur la V2 tant que la bande NeoPixel est sur le GPIO 41 (voir plus haut).
+- **Bouton** : doit relier le GPIO 21 à la masse (le firmware active la résistance de tirage interne).
+- **Source d'alimentation** : la carte ne permet pas de mesurer directement le 12 V ou l'USB ; la source est déduite de la charge de la batterie.
+  Pour une mesure exacte, câbler un pont diviseur vers une entrée analogique (`BROCHE_MESURE_12V`, `BROCHE_MESURE_USB`).
+- **GPS** : l'ordre des champs de `AT+CGNSSINFO` (nombre de satellites par constellation) peut varier selon la version du modem.
+- **Bluetooth** : la vitesse de téléchargement des fichiers et des photos.
 
 ---
 
