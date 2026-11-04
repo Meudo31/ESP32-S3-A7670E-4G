@@ -20,7 +20,8 @@ const uint32_t INTERVALLE_DE_MISE_A_L_HEURE_MS = 10 * UNE_MINUTE_MS;
 //   - degrés et minutes  "4849.123456" (4 chiffres avant le point, 5 pour la longitude) → 48.818724 ;
 //   - degrés décimaux    "48.818724"   (l'A7670E de Meudo répond ainsi).
 // On les reconnaît au nombre de chiffres avant le point.
-double convertirEnDegresDecimaux(const String& texte, const String& hemisphere, int chiffresDesDegres) {
+double convertirEnDegresDecimaux(String texte, const String& hemisphere, int chiffresDesDegres) {
+    texte.trim();
     const double valeur = texte.toDouble();
     int chiffresAvantLePoint = texte.indexOf('.');
     if (chiffresAvantLePoint < 0) chiffresAvantLePoint = texte.length();
@@ -124,6 +125,10 @@ void tacheGPS(void*) {
                 if (nouvellePosition.positionValide) {
                     ecrireDansLeJournal("[GPS] Position trouvée : %.6f, %.6f (%d satellites).", nouvellePosition.latitude,
                                         nouvellePosition.longitude, nouvellePosition.satellitesUtilises);
+                    // La réponse brute du modem, pour vérifier le format des coordonnées.
+                    String brut = reponse.substring(max(0, reponse.indexOf("+CGNSSINFO:")));
+                    brut.trim();
+                    ecrireDansLeJournal("[GPS] Réponse du modem : %s", brut.c_str());
                 } else {
                     ecrireDansLeJournal("[GPS] Position perdue.");
                 }

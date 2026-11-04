@@ -465,10 +465,9 @@ class RappelsDuServeur : public BLEServerCallbacks {
         esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_CONN_HDL0, ESP_PWR_LVL_P18);
         esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_CONN_HDL1, ESP_PWR_LVL_P18);
         esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_CONN_HDL2, ESP_PWR_LVL_P18);
-        // Paramètres de liaison tolérants : intervalle 15 à 30 ms, et la liaison n'est déclarée perdue
-        // qu'après 20 s sans aucun échange (au lieu de 5 s par défaut) : une perturbation radio passagère
-        // (émission 4G du modem, Wi-Fi du téléphone, moto entre les deux) ne coupe plus la liaison.
-        serveur->updateConnParams(parametres->connect.remote_bda, 12, 24, 0, DELAI_DE_COUPURE_SOUHAITE);
+        // Les paramètres tolérants (coupure après 20 s) ne sont PAS demandés ici : au même moment le téléphone
+        // règle lui-même la liaison et le chiffrement démarre ; deux procédures croisées font couper la liaison
+        // 40 s plus tard (raison 0x22). surveillerLaLiaison() les demande une fois la liaison bien installée.
         // Demande le chiffrement : le téléphone affiche la saisie du code PIN s'il n'est pas encore appairé.
         esp_ble_set_encryption(parametres->connect.remote_bda, ESP_BLE_SEC_ENCRYPT_MITM);
         Serial.println("[APPLI] Téléphone connecté, authentification...");
@@ -580,6 +579,7 @@ void surveillerLaLiaison() {
         const char* explication = raisonDeLaDerniereDeconnexion == 0x08 ? "plus de signal"
                                 : raisonDeLaDerniereDeconnexion == 0x13 ? "coupé par le téléphone"
                                 : raisonDeLaDerniereDeconnexion == 0x16 ? "coupé par le module"
+                                : raisonDeLaDerniereDeconnexion == 0x22 ? "procédure sans réponse"
                                 : raisonDeLaDerniereDeconnexion == 0x3E ? "liaison non établie" : "autre";
         char ligne[96];
         snprintf(ligne, sizeof(ligne), "%s 0x%02X %s, après %u s, signal %d dBm, coupure %.1f s",
@@ -602,11 +602,13 @@ void surveillerLaLiaison() {
                             intervalleDeLiaison * 1.25f, delaiDeCoupure / 100.0f);
         if (delaiDeCoupure >= DELAI_DE_COUPURE_SOUHAITE) demandesSansSucces = 0;
     }
-    // Le téléphone a imposé un délai de coupure court : on redemande 20 s (3 fois au plus d'affilée,
-    // pas plus d'une fois toutes les 10 s, et pas pendant un transfert qui a besoin d'une liaison rapide).
+    // Le téléphone a imposé un délai de coupure court : on redemande 20 s (2 fois au plus d'affilée,
+    // et pas pendant un transfert qui a besoin d'une liaison rapide).
+    // On attend que le téléphone ait fini de s'installer (authentifié depuis plus de 15 s), et on laisse
+    // 45 s entre deux demandes : une demande sans réponse n'expire qu'au bout de 40 s.
     const bool transfertEnCours = miseAJourEnCours() || receptionDUnFichierEnCours();
-    if (delaiDeCoupure < DELAI_DE_COUPURE_SOUHAITE && !transfertEnCours && demandesSansSucces < 3
-        && millis() - debutDeLaConnexion >= 5 * UNE_SECONDE_MS && millis() - derniereDemande >= 10 * UNE_SECONDE_MS) {
+    if (delaiDeCoupure < DELAI_DE_COUPURE_SOUHAITE && !transfertEnCours && telephoneAuthentifie && demandesSansSucces < 2
+        && millis() - debutDeLaConnexion >= 15 * UNE_SECONDE_MS && millis() - derniereDemande >= 45 * UNE_SECONDE_MS) {
         derniereDemande = millis();
         demandesSansSucces++;
         demanderUneLiaisonTolerante();
