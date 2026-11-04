@@ -40,6 +40,7 @@ Chaque notification contient un objet JSON dont le champ `t` donne le type.
 | `bat` | 5 s | `ok` (jauge présente), `v` V, `pct` %, `taux` %/h, `charge`, `pleine`, `alertes`, `source`, `autonomie` h, `mesure` (12 V / USB câblés), `v12`, `vusb`, `vmodem`, `jauge`, `temp` |
 | `4g` | 5 s | `pret`, `inscr` (code CREG), `op`, `techno`, `csq`, `dbm`, `sig` %, `mccmnc`, `tac`, `cell`, `bande`, `earfcn`, `rsrp`, `rsrq`, `rssi`, `snr`, `ip`, `apn` |
 | `sys` | 5 s | `fw`, `build`, `carte`, `puce`, `rev`, `coeurs`, `mhz`, `temp`, `flash`, `flash_mhz`, `prog`, `prog_libre`, `sdk`, `mac`, `part`, `up` s, `reset`, `boots` |
+| `ble` | 5 s | Liaison vue par le module : `rssi` dBm, `int` intervalle ms, `to` délai de coupure s, `deco` nombre de déconnexions, `hist` (4 dernières coupures : heure, raison, durée, signal) |
 | `mem` | 5 s | `ram_total` `ram_libre` `ram_min` `ram_bloc`, `psram_total` `psram_libre` `psram_min` `psram_bloc` (octets) |
 | `sim` | 15 s | `modele`, `logiciel`, `imei`, `voix` (le modem sait téléphoner), `etat`, `iccid`, `imsi`, `num` |
 | `carte` | 15 s | `version` (V1/V2), `methode` (comment elle a été détectée), `camera`, `sd`, `sd_type`, `sd_total`, `sd_util`, `heure` (source de l'heure), `vol` |

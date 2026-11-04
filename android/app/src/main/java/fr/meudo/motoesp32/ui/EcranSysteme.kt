@@ -60,6 +60,19 @@ fun EcranSysteme(modifier: Modifier, client: MotoBleClient) {
             }
         }
 
+        etat.liaison?.let { l ->
+            Carte("Liaison Bluetooth") {
+                Ligne("Signal reçu par le module", if (l.signalDbm != 0) "${l.signalDbm} dBm (${qualiteDuSignal(l.signalDbm)})" else "—")
+                Ligne("Intervalle", "%.1f ms".format(l.intervalleMs))
+                Ligne("Coupure après", "%.1f s sans échange".format(l.delaiDeCoupureS))
+                Ligne("Déconnexions depuis le démarrage", "${l.nombreDeDeconnexions}")
+                if (l.historique.isNotEmpty()) {
+                    Text("Dernières coupures :", style = MaterialTheme.typography.labelMedium)
+                    l.historique.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
+                }
+            }
+        }
+
         etat.systeme?.let { s ->
             Carte("Processeur") {
                 Ligne("Puce", "${s.puce} rév. ${s.revision}")
@@ -165,4 +178,12 @@ fun EcranSysteme(modifier: Modifier, client: MotoBleClient) {
             dismissButton = { TextButton(onClick = { confirmerRedemarrage = false }) { Text("Annuler") } },
         )
     }
+}
+
+private fun qualiteDuSignal(dbm: Int): String = when {
+    dbm >= -60 -> "excellent"
+    dbm >= -70 -> "bon"
+    dbm >= -80 -> "moyen"
+    dbm >= -90 -> "faible"
+    else -> "très faible"
 }

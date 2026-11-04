@@ -146,6 +146,13 @@ object Protocole {
                 raisonRedemarrage = j.optString("reset"),
                 nombreDeDemarrages = j.optLong("boots"),
             ))
+            "ble" -> etat.copy(liaison = EtatLiaison(
+                signalDbm = j.optInt("rssi"),
+                intervalleMs = j.optDouble("int", 0.0),
+                delaiDeCoupureS = j.optDouble("to", 0.0),
+                nombreDeDeconnexions = j.optLong("deco"),
+                historique = j.optJSONArray("hist")?.let { liste -> (0 until liste.length()).map { liste.optString(it) } } ?: emptyList(),
+            ))
             "mem" -> etat.copy(memoires = EtatMemoires(
                 ramTotale = j.optLong("ram_total"),
                 ramLibre = j.optLong("ram_libre"),
@@ -311,6 +318,12 @@ data class EtatSysteme(
     val raisonRedemarrage: String, val nombreDeDemarrages: Long,
 )
 
+/** La liaison Bluetooth vue par le module : signal, paramètres et dernières coupures. */
+data class EtatLiaison(
+    val signalDbm: Int, val intervalleMs: Double, val delaiDeCoupureS: Double,
+    val nombreDeDeconnexions: Long, val historique: List<String>,
+)
+
 data class EtatMemoires(
     val ramTotale: Long, val ramLibre: Long, val ramMinimum: Long, val ramPlusGrandBloc: Long,
     val psramTotale: Long, val psramLibre: Long, val psramMinimum: Long, val psramPlusGrandBloc: Long,
@@ -336,6 +349,7 @@ data class EtatDuModule(
     val reseau: EtatReseau? = null,
     val sim: EtatSim? = null,
     val systeme: EtatSysteme? = null,
+    val liaison: EtatLiaison? = null,
     val memoires: EtatMemoires? = null,
     val taches: List<TacheDuModule> = emptyList(),
     val carte: EtatCarte? = null,

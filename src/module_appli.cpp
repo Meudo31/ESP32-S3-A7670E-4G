@@ -48,6 +48,20 @@ volatile bool     telephoneAuthentifie = false;
 volatile bool     journalDemande      = true;
 volatile uint16_t identifiantDeConnexion = 0;
 
+// ─── Surveillance de la liaison Bluetooth (pour comprendre et éviter les coupures) ───
+esp_bd_addr_t     adresseDuTelephone = {0};
+volatile int8_t   signalDuTelephoneDbm = 0;        // RSSI mesuré par le module
+volatile uint16_t intervalleDeLiaison = 0;         // en unités de 1,25 ms
+volatile uint16_t delaiDeCoupure = 0;              // délai de supervision, en unités de 10 ms
+volatile bool     parametresAVerifier = false;     // le téléphone vient de changer les paramètres
+volatile bool     deconnexionANoter = false;
+volatile uint8_t  raisonDeLaDerniereDeconnexion = 0;
+uint32_t          debutDeLaConnexion = 0;
+uint32_t          nombreDeDeconnexions = 0;
+const int         TAILLE_DE_L_HISTORIQUE = 4;
+String            historiqueDesDeconnexions[TAILLE_DE_L_HISTORIQUE];
+const uint16_t    DELAI_DE_COUPURE_SOUHAITE = 2000;   // 20 s, en unités de 10 ms
+
 SemaphoreHandle_t verrouDesNotifications = nullptr;   // une seule notification à la fois
 QueueHandle_t     fileDesCommandes       = nullptr;
 QueueHandle_t     fileDuJournal          = nullptr;
@@ -94,7 +108,21 @@ void envoyerLeReseau()       { JsonDocument d; decrireLeReseau4G(d);          en
 void envoyerLaCarteSIM()     { JsonDocument d; decrireLaCarteSIMEtLeModem(d); envoyerUnDocument(d); }
 void envoyerLesNeopixels()   { JsonDocument d; decrireLesNeopixels(d);        envoyerUnDocument(d); }
 void envoyerLAppelEnCours()  { JsonDocument d; decrireLAppelEnCours(d);       envoyerUnDocument(d); }
-void envoyerLeProcesseur()   { JsonDocument d; decrireLeProcesseur(d);        envoyerUnDocument(d); }
+void envoyerLeProcesseur() {
+    JsonDocument d;
+    decrireLeProcesseur(d);
+    envoyerUnDocument(d);
+    // La liaison Bluetooth vue par le module, dans un message à part (le message « sys » est déjà long).
+    JsonDocument liaison;
+    liaison["t"]    = "ble";
+    liaison["rssi"] = signalDuTelephoneDbm;
+    liaison["int"]  = intervalleDeLiaison * 1.25f;
+    liaison["to"]   = delaiDeCoupure / 100.0f;
+    liaison["deco"] = nombreDeDeconnexions;
+    JsonArray historique = liaison["hist"].to<JsonArray>();
+    for (const String& ligne : historiqueDesDeconnexions) if (ligne.length() > 0) historique.add(ligne);
+    envoyerUnDocument(liaison);
+}
 void envoyerLesMemoires()    { JsonDocument d; decrireLesMemoires(d);         envoyerUnDocument(d); }
 
 void envoyerLaCarteEtLaCarteSD() {
@@ -429,10 +457,18 @@ class RappelsDuServeur : public BLEServerCallbacks {
         telephoneConnecte      = true;
         telephoneAuthentifie   = false;
         identifiantDeConnexion = parametres->connect.conn_id;
+        memcpy(adresseDuTelephone, parametres->connect.remote_bda, sizeof(esp_bd_addr_t));
+        debutDeLaConnexion = millis();
+        intervalleDeLiaison = parametres->connect.conn_params.interval;
+        delaiDeCoupure      = parametres->connect.conn_params.timeout;
+        // Puissance maximale aussi pour la liaison elle-même (et pas seulement pour l'annonce).
+        esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_CONN_HDL0, ESP_PWR_LVL_P18);
+        esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_CONN_HDL1, ESP_PWR_LVL_P18);
+        esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_CONN_HDL2, ESP_PWR_LVL_P18);
         // Paramètres de liaison tolérants : intervalle 15 à 30 ms, et la liaison n'est déclarée perdue
         // qu'après 20 s sans aucun échange (au lieu de 5 s par défaut) : une perturbation radio passagère
         // (émission 4G du modem, Wi-Fi du téléphone, moto entre les deux) ne coupe plus la liaison.
-        serveur->updateConnParams(parametres->connect.remote_bda, 12, 24, 0, 2000);
+        serveur->updateConnParams(parametres->connect.remote_bda, 12, 24, 0, DELAI_DE_COUPURE_SOUHAITE);
         // Demande le chiffrement : le téléphone affiche la saisie du code PIN s'il n'est pas encore appairé.
         esp_ble_set_encryption(parametres->connect.remote_bda, ESP_BLE_SEC_ENCRYPT_MITM);
         Serial.println("[APPLI] Téléphone connecté, authentification...");
@@ -446,7 +482,9 @@ class RappelsDuServeur : public BLEServerCallbacks {
         // La raison est notée dans le journal du jour pour comprendre les coupures :
         // 0x08 = plus de signal (trop loin, perturbations), 0x13 = coupé par le téléphone,
         // 0x16 = coupé par le module, 0x3E = liaison jamais établie.
-        ecrireDansLeJournal("[APPLI] Téléphone déconnecté (raison 0x%02X).", parametres->disconnect.reason);
+        // Le détail (durée, signal, délai de coupure) est noté par la tâche Appli, hors du Bluetooth.
+        raisonDeLaDerniereDeconnexion = parametres->disconnect.reason;
+        deconnexionANoter = true;
         BLEDevice::startAdvertising();
     }
 };
@@ -513,6 +551,68 @@ BLECharacteristic* creerUneCaracteristique(BLEService* service, const char* uuid
     return caracteristique;
 }
 
+// Événements radio : le téléphone choisit les paramètres de la liaison (et Android remet souvent
+// un délai de coupure de 5 s) ; on les note, et la tâche Appli redemande 20 s si besoin.
+void surveillerLaRadio(esp_gap_ble_cb_event_t evenement, esp_ble_gap_cb_param_t* parametres) {
+    if (evenement == ESP_GAP_BLE_UPDATE_CONN_PARAMS_EVT && parametres->update_conn_params.status == ESP_BT_STATUS_SUCCESS) {
+        intervalleDeLiaison = parametres->update_conn_params.conn_int;
+        delaiDeCoupure      = parametres->update_conn_params.timeout;
+        parametresAVerifier = true;
+    } else if (evenement == ESP_GAP_BLE_READ_RSSI_COMPLETE_EVT && parametres->read_rssi_cmpl.status == ESP_BT_STATUS_SUCCESS) {
+        signalDuTelephoneDbm = parametres->read_rssi_cmpl.rssi;
+    }
+}
+
+void demanderUneLiaisonTolerante() {
+    // Intervalle 15 à 30 ms, aucune latence, coupure seulement après 20 s sans échange.
+    serveur->updateConnParams(adresseDuTelephone, 12, 24, 0, DELAI_DE_COUPURE_SOUHAITE);
+}
+
+// Appelé régulièrement par la tâche Appli.
+void surveillerLaLiaison() {
+    static uint32_t derniereMesure = 0, derniereDemande = 0;
+    static int demandesSansSucces = 0;
+
+    if (deconnexionANoter) {
+        deconnexionANoter = false;
+        nombreDeDeconnexions++;
+        const uint32_t duree = (millis() - debutDeLaConnexion) / 1000;
+        const char* explication = raisonDeLaDerniereDeconnexion == 0x08 ? "plus de signal"
+                                : raisonDeLaDerniereDeconnexion == 0x13 ? "coupé par le téléphone"
+                                : raisonDeLaDerniereDeconnexion == 0x16 ? "coupé par le module"
+                                : raisonDeLaDerniereDeconnexion == 0x3E ? "liaison non établie" : "autre";
+        char ligne[96];
+        snprintf(ligne, sizeof(ligne), "%s 0x%02X %s, après %u s, signal %d dBm, coupure %.1f s",
+                 heurePourLeJournal().c_str(), raisonDeLaDerniereDeconnexion, explication, (unsigned)duree,
+                 signalDuTelephoneDbm, delaiDeCoupure / 100.0f);
+        for (int i = TAILLE_DE_L_HISTORIQUE - 1; i > 0; i--) historiqueDesDeconnexions[i] = historiqueDesDeconnexions[i - 1];
+        historiqueDesDeconnexions[0] = ligne;
+        ecrireDansLeJournal("[APPLI] Téléphone déconnecté : %s.", ligne);
+        demandesSansSucces = 0;
+    }
+    if (!telephoneConnecte) return;
+
+    if (millis() - derniereMesure >= 5 * UNE_SECONDE_MS) {
+        derniereMesure = millis();
+        esp_ble_gap_read_rssi(adresseDuTelephone);
+    }
+    if (parametresAVerifier) {
+        parametresAVerifier = false;
+        ecrireDansLeJournal("[APPLI] Liaison : intervalle %.1f ms, coupure après %.1f s.",
+                            intervalleDeLiaison * 1.25f, delaiDeCoupure / 100.0f);
+        if (delaiDeCoupure >= DELAI_DE_COUPURE_SOUHAITE) demandesSansSucces = 0;
+    }
+    // Le téléphone a imposé un délai de coupure court : on redemande 20 s (3 fois au plus d'affilée,
+    // pas plus d'une fois toutes les 10 s, et pas pendant un transfert qui a besoin d'une liaison rapide).
+    const bool transfertEnCours = miseAJourEnCours() || receptionDUnFichierEnCours();
+    if (delaiDeCoupure < DELAI_DE_COUPURE_SOUHAITE && !transfertEnCours && demandesSansSucces < 3
+        && millis() - debutDeLaConnexion >= 5 * UNE_SECONDE_MS && millis() - derniereDemande >= 10 * UNE_SECONDE_MS) {
+        derniereDemande = millis();
+        demandesSansSucces++;
+        demanderUneLiaisonTolerante();
+    }
+}
+
 void preparerLeBluetooth() {
     BLEDevice::init(NOM_BLUETOOTH_DU_MODULE);
     BLEDevice::setMTU(517);
@@ -522,6 +622,7 @@ void preparerLeBluetooth() {
     esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_ADV, ESP_PWR_LVL_P18);
     esp_ble_tx_power_set(ESP_BLE_PWR_TYPE_SCAN, ESP_PWR_LVL_P18);
 
+    BLEDevice::setCustomGapHandler(surveillerLaRadio);
     BLEDevice::setEncryptionLevel(ESP_BLE_SEC_ENCRYPT_MITM);
     BLEDevice::setSecurityCallbacks(new RappelsDeSecurite());
     BLESecurity* securite = new BLESecurity();
@@ -566,6 +667,7 @@ void tacheAppli(void*) {
 
     for (;;) {
         while (xQueueReceive(fileDesCommandes, &commande, 0) == pdPASS) executerUneCommande(commande.texte);
+        surveillerLaLiaison();
 
         const bool authentifie = appliConnectee();
         if (authentifie && !etaitAuthentifie) {
