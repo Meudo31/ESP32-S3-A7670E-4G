@@ -40,6 +40,7 @@
 #include "module_gps.h"
 #include "module_haut_parleur.h"
 #include "module_wifi.h"
+#include "module_alertes_sms.h"
 #include "module_horloge.h"
 #include "module_journal.h"
 #include "module_mise_a_jour.h"
@@ -98,6 +99,7 @@ void setup() {
     demarrer("SMS",          demarrerModuleSMS);
     demarrer("Appels",       demarrerModuleAppels);
     demarrer("Haut-parleur", demarrerModuleHautParleur);
+    demarrer("Alertes SMS",  demarrerModuleAlertesSMS);
 
     // 5. La liaison avec l'application Android.
     demarrer("Explorateur de fichiers", demarrerModuleExplorateurFichiers);

@@ -264,6 +264,7 @@ private fun OngletReseau(client: MotoBleClient) {
             }
         }
         if (sim != null) {
+            CarteDesAlertes(client, sim)
             Carte("Carte SIM") {
                 Ligne("État", sim.etat)
                 Ligne("Numéro", sim.numero.ifEmpty { "inconnu de la SIM" })
@@ -275,6 +276,39 @@ private fun OngletReseau(client: MotoBleClient) {
                 Ligne("Logiciel", sim.versionLogiciel)
                 Ligne("IMEI", sim.imei)
                 Ligne("Voix / haut-parleur", if (sim.voixDisponible) "oui" else "non")
+            }
+        }
+    }
+}
+
+/** Alertes SMS automatiques : démarrage, position trouvée, déplacement de plus de 5 km. */
+@Composable
+private fun CarteDesAlertes(client: MotoBleClient, sim: fr.meudo.motoesp32.ble.EtatSim) {
+    var numero by rememberSaveable(sim.numeroDesAlertes) { mutableStateOf(sim.numeroDesAlertes) }
+    Carte("Alertes SMS") {
+        Text(
+            "Le module envoie un SMS à ce numéro : à l'allumage (batterie, réseau), quand le GPS trouve une position " +
+                "(lien Google Maps), puis à chaque déplacement de plus de 5 km.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Alertes activées", modifier = Modifier.weight(1f))
+            androidx.compose.material3.Switch(
+                checked = sim.alertesActives,
+                onCheckedChange = { client.envoyerCommande("ALERTES ${if (it) 1 else 0}") },
+            )
+        }
+        OutlinedTextField(
+            value = numero, onValueChange = { numero = it.filter { c -> c.isDigit() || c == '+' }.take(20) },
+            label = { Text("Numéro (+33…)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { client.envoyerCommande("ALERTES_NUMERO $numero") }, enabled = numero != sim.numeroDesAlertes) {
+                Text("Enregistrer")
+            }
+            FilledTonalButton(onClick = { client.envoyerCommande("ALERTES_TEST") }, enabled = sim.numeroDesAlertes.isNotEmpty()) {
+                Text("Envoyer un SMS de test")
             }
         }
     }

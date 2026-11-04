@@ -42,7 +42,7 @@ Chaque notification contient un objet JSON dont le champ `t` donne le type.
 | `sys` | 5 s | `fw`, `build`, `carte`, `puce`, `rev`, `coeurs`, `mhz`, `temp`, `flash`, `flash_mhz`, `prog`, `prog_libre`, `sdk`, `mac`, `part`, `up` s, `reset`, `boots` |
 | `ble` | 5 s | Liaison vue par le module : `rssi` dBm, `int` intervalle ms, `to` délai de coupure s, `deco` nombre de déconnexions, `hist` (4 dernières coupures : heure, raison, durée, signal) |
 | `mem` | 5 s | `ram_total` `ram_libre` `ram_min` `ram_bloc`, `psram_total` `psram_libre` `psram_min` `psram_bloc` (octets) |
-| `sim` | 15 s | `modele`, `logiciel`, `imei`, `voix` (le modem sait téléphoner), `etat`, `iccid`, `imsi`, `num` |
+| `sim` | 15 s | `modele`, `logiciel`, `imei`, `voix` (le modem sait téléphoner), `etat`, `iccid`, `imsi`, `num`, `alerte_num`, `alertes` (0/1) |
 | `carte` | 15 s | `version` (V1/V2), `methode` (comment elle a été détectée), `camera`, `sd`, `sd_type`, `sd_total`, `sd_util`, `heure` (source de l'heure), `vol` |
 | `neo` | 15 s et à chaque changement | `num`, `nom`, `lum` 0-255, `allumee`, `noms` (les 13 animations) |
 | `appel` | 15 s et à chaque changement | `etat` (0 aucun, 1 sonnerie, 2 numérotation, 3 en communication), `num`, `duree` s |
@@ -82,6 +82,9 @@ Les arguments sont séparés du nom par un espace, et entre eux par `|`. Les nom
 | `APPELER numéro`, `DECROCHER`, `RACCROCHER` | Téléphone (sans micro pour l'instant : on entend seulement l'appelant) |
 | `VOLUME 0-5` | Volume du haut-parleur |
 | `ANNONCER texte` | Fait prononcer un texte au haut-parleur |
+| `ALERTES_NUMERO numéro` | Numéro qui reçoit les alertes SMS (vide = aucun) ; gardé dans le module |
+| `ALERTES 0\|1` | Coupe ou active les alertes SMS |
+| `ALERTES_TEST` | Envoie tout de suite le SMS d'état (batterie, réseau, position) |
 | `WIFI_ON` | Ouvre le Wi-Fi « Moto_ESP32 » du module ; répond `nom\|mot de passe\|adresse` (voir ci-dessous) |
 | `WIFI_OFF` | Ferme le Wi-Fi du module (il se ferme aussi seul après 2 minutes sans requête) |
 | `SON_TEST` | Bip (`AT+SIMTONE`), phrase (`AT+CTTS`) et son SMS ; répond `SON_TEST` avec ce que le modem a accepté |

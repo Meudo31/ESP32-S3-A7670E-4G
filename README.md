@@ -9,6 +9,7 @@ Boîtier connecté pour moto, basé sur la carte **Waveshare ESP32-S3 A7670E 4G*
 ## Fonctionnalités
 
 - **GPS** (GPS, GLONASS, Galileo, BeiDou) par le modem A7670E : position, vitesse, altitude, cap, satellites, précision
+- **Alertes SMS** : à l'allumage (batterie, réseau), dès que le GPS trouve une position (lien Google Maps), puis à chaque déplacement de plus de 5 km
 - **4G** : SMS envoyés et reçus, appels sortants et entrants, toutes les informations du réseau et de la carte SIM
 - **Photo** enregistrée sur la carte SD, un dossier par jour : `/photos/jj-mm-aaaa/jj-mm-aaaa_hh-mm-ss_ESP32-A7670.jpg`
 - **Bande de 14 LED NeoPixel** (GPIO 40) avec 13 animations, changées par le **bouton** (GPIO 21) ou l'application.
@@ -93,6 +94,7 @@ src/
 ├── module_modem.cpp                 Seul module qui parle au modem (commandes AT, notifications)
 ├── module_reseau_4g.cpp             Réseau 4G, carte SIM, signal
 ├── module_sms.cpp                   Envoi et réception des SMS
+├── module_alertes_sms.cpp           SMS automatiques : allumage, position trouvée, déplacement de 5 km
 ├── module_appels.cpp                Appels entrants et sortants
 ├── module_haut_parleur.cpp          Voix de synthèse, sons, sonnerie, volume
 ├── module_gps.cpp                   Position GNSS

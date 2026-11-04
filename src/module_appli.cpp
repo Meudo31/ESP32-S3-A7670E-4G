@@ -24,6 +24,7 @@
 #include "module_sms.h"
 #include "module_systeme.h"
 #include "module_wifi.h"
+#include "module_alertes_sms.h"
 
 #if __has_include("secrets.h")
 #include "secrets.h"
@@ -106,7 +107,13 @@ void envoyerUnDocument(JsonDocument& document) { publierUnEvenementVersLAppli(do
 void envoyerLaPositionGPS()  { JsonDocument d; decrireLaPositionGPS(d);       envoyerUnDocument(d); }
 void envoyerLaBatterie()     { JsonDocument d; decrireLaBatterie(d);          envoyerUnDocument(d); }
 void envoyerLeReseau()       { JsonDocument d; decrireLeReseau4G(d);          envoyerUnDocument(d); }
-void envoyerLaCarteSIM()     { JsonDocument d; decrireLaCarteSIMEtLeModem(d); envoyerUnDocument(d); }
+void envoyerLaCarteSIM() {
+    JsonDocument d;
+    decrireLaCarteSIMEtLeModem(d);
+    d["alerte_num"] = numeroDesAlertes();
+    d["alertes"]    = alertesActives() ? 1 : 0;
+    envoyerUnDocument(d);
+}
 void envoyerLesNeopixels()   { JsonDocument d; decrireLesNeopixels(d);        envoyerUnDocument(d); }
 void envoyerLAppelEnCours()  { JsonDocument d; decrireLAppelEnCours(d);       envoyerUnDocument(d); }
 void envoyerLeProcesseur() {
@@ -302,6 +309,23 @@ void commandeJouerUnSon(const char* nom, const ArgumentsDeCommande& arguments) {
     if (!jouerUnSonDeLaCarteSD(arguments.tout)) repondreALAppli(nom, false, "Chemin invalide");
 }
 
+void commandeNumeroDesAlertes(const char* nom, const ArgumentsDeCommande& arguments) {
+    choisirLeNumeroDesAlertes(arguments.tout);
+    repondreALAppli(nom, true, arguments.tout.length() ? "Numéro des alertes enregistré" : "Alertes SMS sans numéro");
+    envoyerLaCarteSIM();
+}
+
+void commandeActiverLesAlertes(const char* nom, const ArgumentsDeCommande& arguments) {
+    activerLesAlertes(arguments.premier.toInt() != 0);
+    repondreALAppli(nom, true, alertesActives() ? "Alertes SMS activées" : "Alertes SMS coupées");
+    envoyerLaCarteSIM();
+}
+
+void commandeTesterLesAlertes(const char* nom, const ArgumentsDeCommande&) {
+    const bool reussi = envoyerUneAlerteDeTest();
+    repondreALAppli(nom, reussi, reussi ? "SMS de test demandé" : "Aucun numéro enregistré");
+}
+
 void commandeOuvrirLeWifi(const char* nom, const ArgumentsDeCommande&) {
     String reseau, motDePasse, adresse;
     if (ouvrirLeWifi(reseau, motDePasse, adresse)) repondreALAppli(nom, true, (reseau + "|" + motDePasse + "|" + adresse).c_str());
@@ -413,6 +437,9 @@ const CommandeConnue COMMANDES[] = {
     { "ANNONCER",            commandeAnnoncer },
     { "SON_TEST",            commandeTesterLeSon },
     { "WIFI_ON",             commandeOuvrirLeWifi },
+    { "ALERTES_NUMERO",      commandeNumeroDesAlertes },
+    { "ALERTES",             commandeActiverLesAlertes },
+    { "ALERTES_TEST",        commandeTesterLesAlertes },
     { "WIFI_OFF",            commandeFermerLeWifi },
     { "SON_JOUER",           commandeJouerUnSon },
     { "SORTIE_AUDIO",        commandeSortieAudio },

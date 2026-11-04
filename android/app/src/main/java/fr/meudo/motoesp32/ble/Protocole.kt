@@ -125,6 +125,8 @@ object Protocole {
                 iccid = j.optString("iccid"),
                 imsi = j.optString("imsi"),
                 numero = j.optString("num"),
+                numeroDesAlertes = j.optString("alerte_num"),
+                alertesActives = j.optInt("alertes") == 1,
             ))
             "sys" -> etat.copy(systeme = EtatSysteme(
                 versionFirmware = j.optString("fw"),
@@ -308,6 +310,7 @@ data class PointSignal(val instantMs: Long, val signalPct: Int, val rsrp: Double
 data class EtatSim(
     val modele: String, val versionLogiciel: String, val imei: String, val voixDisponible: Boolean,
     val etat: String, val iccid: String, val imsi: String, val numero: String,
+    val numeroDesAlertes: String = "", val alertesActives: Boolean = false,
 )
 
 data class EtatSysteme(
