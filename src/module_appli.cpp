@@ -269,6 +269,10 @@ void commandeTesterLeSon(const char* nom, const ArgumentsDeCommande&) {
     testerLeHautParleurDuModule();   // le résultat arrive dans quelques secondes (réponse SON_TEST)
 }
 
+void commandeJouerUnSon(const char* nom, const ArgumentsDeCommande& arguments) {
+    if (!jouerUnSonDeLaCarteSD(arguments.tout)) repondreALAppli(nom, false, "Chemin invalide");
+}
+
 void commandeSortieAudio(const char* nom, const ArgumentsDeCommande& arguments) {
     if (!choisirLaSortieDuHautParleur(arguments.premier.toInt())) repondreALAppli(nom, false, "Sortie 1 (combiné) ou 3 (haut-parleur)");
 }
@@ -368,6 +372,7 @@ const CommandeConnue COMMANDES[] = {
     { "SONS_INSTALLER",      commandeInstallerLesSons },
     { "ANNONCER",            commandeAnnoncer },
     { "SON_TEST",            commandeTesterLeSon },
+    { "SON_JOUER",           commandeJouerUnSon },
     { "SORTIE_AUDIO",        commandeSortieAudio },
     { "NEO",                 commandeChoisirLAnimation },
     { "NEO_SUIVANTE",        commandeAnimationSuivante },

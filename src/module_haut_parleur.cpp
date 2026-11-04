@@ -11,7 +11,7 @@
 
 namespace {
 
-enum class SonDemande : uint8_t { ANNONCE, NOUVEAU_SMS, DEBUT_SONNERIE, FIN_SONNERIE, VOLUME, TEST, SORTIE };
+enum class SonDemande : uint8_t { ANNONCE, NOUVEAU_SMS, DEBUT_SONNERIE, FIN_SONNERIE, VOLUME, TEST, SORTIE, FICHIER_DE_LA_CARTE };
 
 struct DemandeDeSon {
     SonDemande son;
@@ -111,6 +111,28 @@ void appliquerLeVolume() {
     envoyerCommandeAT(String("AT+CTTSPARAM=") + volumeDeLaVoix + ",3,0,1,1", nullptr, 1000);
 }
 
+bool copierUnFichierDansLeModem(const char* cheminSurLaCarte, const char* cheminDansLeModem, String& compteRendu);
+
+// Le modem ne lit pas la carte SD de l'ESP32 : on copie le son dans sa mémoire (c:/lecture.xxx), puis on le joue.
+void jouerUnFichierDeLaCarteSD(const char* chemin) {
+    String extension = String(chemin).substring(String(chemin).lastIndexOf('.') + 1);
+    extension.toLowerCase();
+    if (extension != "wav" && extension != "amr" && extension != "mp3") {
+        repondreALAppli("SON_JOUER", false, "Format non pris en charge (WAV, AMR ou MP3)");
+        return;
+    }
+    const String cheminDansLeModem = "c:/lecture." + extension;
+    String compteRendu;
+    if (!copierUnFichierDansLeModem(chemin, cheminDansLeModem.c_str(), compteRendu)) {
+        repondreALAppli("SON_JOUER", false, compteRendu.c_str());
+        return;
+    }
+    envoyerCommandeAT("AT+CCMXSTOP", nullptr, 1000);
+    const bool reussi = jouerUnFichierDuModem(cheminDansLeModem.c_str());
+    ecrireDansLeJournal("[HAUT-PARLEUR] Lecture de %s : %s.", chemin, reussi ? "OK" : "refusée par le modem");
+    repondreALAppli("SON_JOUER", reussi, reussi ? "Lecture en cours" : "Le modem refuse ce fichier (essayer un WAV mono 8 kHz 16 bits)");
+}
+
 void traiterUneDemande(const DemandeDeSon& demande) {
     switch (demande.son) {
         case SonDemande::ANNONCE:
@@ -129,6 +151,9 @@ void traiterUneDemande(const DemandeDeSon& demande) {
         case SonDemande::VOLUME:
             volumeActuel = constrain(demande.valeur, 0, 5);
             appliquerLeVolume();
+            break;
+        case SonDemande::FICHIER_DE_LA_CARTE:
+            jouerUnFichierDeLaCarteSD(demande.texte);
             break;
         case SonDemande::TEST:
             testerLeHautParleur();
@@ -163,7 +188,7 @@ void tacheHautParleur(void*) {
 }
 
 bool copierUnFichierDansLeModem(const char* cheminSurLaCarte, const char* cheminDansLeModem, String& compteRendu) {
-    if (!prendreLaCarteSD()) return false;
+    if (!prendreLaCarteSD()) { compteRendu += "Carte SD occupée. "; return false; }
     File fichier = systemeDeFichiersDeLaCarteSD().open(cheminSurLaCarte, FILE_READ);
     if (!fichier) {
         rendreLaCarteSD();
@@ -171,6 +196,12 @@ bool copierUnFichierDansLeModem(const char* cheminSurLaCarte, const char* chemin
         return false;
     }
     const size_t taille = fichier.size();
+    if (taille > 400 * 1024) {
+        fichier.close();
+        rendreLaCarteSD();
+        compteRendu += String(cheminSurLaCarte) + " trop gros (400 Ko au plus : WAV mono 8 kHz conseillé). ";
+        return false;
+    }
     uint8_t* contenu = (uint8_t*)ps_malloc(taille);
     const bool lu = contenu != nullptr && fichier.read(contenu, taille) == taille;
     fichier.close();
@@ -182,7 +213,7 @@ bool copierUnFichierDansLeModem(const char* cheminSurLaCarte, const char* chemin
     }
     envoyerCommandeAT(String("AT+FSDEL=\"") + cheminDansLeModem + "\"", nullptr, 2000);   // ancienne version éventuelle
     const String commande = String("AT+CFTRANRX=\"") + cheminDansLeModem + "\"," + taille;
-    const bool copie = envoyerCommandeATAvecDonnees(commande, contenu, taille, false, nullptr, 30000) == ResultatAT::OK;
+    const bool copie = envoyerCommandeATAvecDonnees(commande, contenu, taille, false, nullptr, 30000 + taille / 5) == ResultatAT::OK;
     free(contenu);
     compteRendu += String(cheminDansLeModem) + (copie ? " installé. " : " : échec de copie. ");
     return copie;
@@ -207,6 +238,12 @@ void reglerLeVolumeDuHautParleur(int volume) {
 int volumeDuHautParleur() { return volumeActuel; }
 
 void testerLeHautParleurDuModule() { envoyerLaDemande(SonDemande::TEST); }
+
+bool jouerUnSonDeLaCarteSD(const String& chemin) {
+    if (!chemin.startsWith("/") || chemin.length() >= sizeof(DemandeDeSon::texte)) return false;
+    envoyerLaDemande(SonDemande::FICHIER_DE_LA_CARTE, chemin);
+    return true;
+}
 
 bool choisirLaSortieDuHautParleur(int sortie) {
     if (sortie != 1 && sortie != 3) return false;

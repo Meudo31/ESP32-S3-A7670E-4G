@@ -216,7 +216,7 @@ fun AppliMoto(
 /** Commandes dont on affiche aussi la réussite (les autres ne s'affichent qu'en cas d'erreur). */
 private val COMMANDES_A_CONFIRMER = setOf(
     "FICHIER_RENOMMER", "FICHIER_DEPLACER", "FICHIER_SUPPRIMER", "DOSSIER_CREER", "SMS_SUPPRIMER",
-    "SONS_INSTALLER", "REBOOT", "PING", "APPELER", "SON_TEST",
+    "SONS_INSTALLER", "REBOOT", "PING", "APPELER", "SON_TEST", "SON_JOUER",
 )
 
 private fun texteEtat(etat: EtatConnexion): String = when (etat) {

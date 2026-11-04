@@ -152,6 +152,7 @@ fun EcranFichiers(modifier: Modifier, client: MotoBleClient) {
                     renommer = { dialogue = Dialogue.Renommer(element) },
                     deplacer = { dialogue = Dialogue.Deplacer(element) },
                     supprimer = { dialogue = Dialogue.Supprimer(element) },
+                    jouer = { client.envoyerCommande("SON_JOUER ${Protocole.chemin(dossier.chemin, element.nom)}") },
                 )
                 HorizontalDivider()
             }
@@ -255,6 +256,7 @@ private fun LigneDeFichier(
     renommer: () -> Unit,
     deplacer: () -> Unit,
     supprimer: () -> Unit,
+    jouer: () -> Unit,
 ) {
     var menuOuvert by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth().clickable(onClick = ouvrir).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -277,6 +279,7 @@ private fun LigneDeFichier(
         }
         IconButton(onClick = { menuOuvert = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "Actions") }
         DropdownMenu(expanded = menuOuvert, onDismissRequest = { menuOuvert = false }) {
+            if (estUnSon(element.nom)) DropdownMenuItem(text = { Text("Jouer sur le haut-parleur") }, onClick = { menuOuvert = false; jouer() })
             if (!element.estUnDossier) DropdownMenuItem(text = { Text("Télécharger") }, onClick = { menuOuvert = false; telecharger() })
             DropdownMenuItem(text = { Text("Renommer") }, onClick = { menuOuvert = false; renommer() })
             DropdownMenuItem(text = { Text("Déplacer") }, onClick = { menuOuvert = false; deplacer() })
@@ -337,3 +340,7 @@ private fun FenetreDeDialogue(dialogue: Dialogue, dossierCourant: String, client
         dismissButton = { TextButton(onClick = fermer) { Text("Annuler") } },
     )
 }
+
+/** Formats que le modem sait jouer (AT+CCMXPLAY). */
+private fun estUnSon(nom: String): Boolean =
+    nom.substringAfterLast('.', "").lowercase() in setOf("wav", "amr", "mp3")

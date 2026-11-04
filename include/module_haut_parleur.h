@@ -36,6 +36,8 @@ int  volumeDuHautParleur();
 
 // Diagnostic : bip, voix et son SMS ; le résultat (ce que le modem accepte) est renvoyé à l'application.
 void testerLeHautParleurDuModule();
+// Copie un son de la carte SD (WAV, AMR, MP3) dans le modem et le joue ; réponse SON_JOUER à l'application.
+bool jouerUnSonDeLaCarteSD(const String& chemin);
 // Sortie audio du modem (AT+CSDVC) : 1 = combiné (écouteur), 3 = haut-parleur. Mémorisée.
 bool choisirLaSortieDuHautParleur(int sortie);
 int  sortieDuHautParleur();
