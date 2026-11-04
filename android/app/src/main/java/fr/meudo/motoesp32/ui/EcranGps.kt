@@ -16,6 +16,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -52,7 +53,8 @@ fun EcranGps(modifier: Modifier, client: MotoBleClient) {
 
         Carte("Carte") {
             if (gps.positionValide) {
-                CarteOpenStreetMap(gps, etat.historiqueGps, Modifier.fillMaxWidth().height(280.dp))
+                // clipToBounds : sans lui, la carte déborde sur les lignes voisines.
+                CarteOpenStreetMap(gps, etat.historiqueGps, Modifier.fillMaxWidth().height(280.dp).clipToBounds())
                 Ligne("Coordonnées", String.format(Locale.US, "%.6f, %.6f", gps.latitude, gps.longitude))
             } else {
                 Text("Pas encore de position. Le module doit voir le ciel (première position : quelques minutes).")

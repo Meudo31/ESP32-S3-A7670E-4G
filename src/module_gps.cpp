@@ -16,12 +16,20 @@ const float    NOEUDS_VERS_KMH = 1.852f;
 const uint32_t INTERVALLE_DE_LECTURE_MS = 1000;
 const uint32_t INTERVALLE_DE_MISE_A_L_HEURE_MS = 10 * UNE_MINUTE_MS;
 
-// "4849.123456" + "N"  →  48.818724
-double convertirEnDegresDecimaux(const String& degresEtMinutes, const String& hemisphere) {
-    const double valeur  = degresEtMinutes.toDouble();
-    const int    degres  = (int)(valeur / 100);
-    const double minutes = valeur - degres * 100;
-    double resultat = degres + minutes / 60.0;
+// Selon la version de son logiciel, le modem donne la position de deux façons :
+//   - degrés et minutes  "4849.123456" (4 chiffres avant le point, 5 pour la longitude) → 48.818724 ;
+//   - degrés décimaux    "48.818724"   (l'A7670E de Meudo répond ainsi).
+// On les reconnaît au nombre de chiffres avant le point.
+double convertirEnDegresDecimaux(const String& texte, const String& hemisphere, int chiffresDesDegres) {
+    const double valeur = texte.toDouble();
+    int chiffresAvantLePoint = texte.indexOf('.');
+    if (chiffresAvantLePoint < 0) chiffresAvantLePoint = texte.length();
+    double resultat = valeur;
+    if (chiffresAvantLePoint > chiffresDesDegres) {
+        const int    degres  = (int)(valeur / 100);
+        const double minutes = valeur - degres * 100;
+        resultat = degres + minutes / 60.0;
+    }
     if (hemisphere == "S" || hemisphere == "W") resultat = -resultat;
     return resultat;
 }
@@ -72,8 +80,8 @@ bool lireLaReponseDuGPS(const String& reponse, PositionGPS& position) {
 
     const int h = champHemisphere;
     position.typeDePosition = champs[0].toInt();
-    position.latitude       = convertirEnDegresDecimaux(champs[h - 1], champs[h]);
-    position.longitude      = convertirEnDegresDecimaux(champs[h + 1], champs[h + 2]);
+    position.latitude       = convertirEnDegresDecimaux(champs[h - 1], champs[h], 2);
+    position.longitude      = convertirEnDegresDecimaux(champs[h + 1], champs[h + 2], 3);
     position.heureUTC       = convertirLaDateEtLHeure(champs[h + 3], champs[h + 4]);
     position.altitudeMetres = champs[h + 5].toFloat();
     position.vitesseKmh     = champs[h + 6].toFloat() * NOEUDS_VERS_KMH;
