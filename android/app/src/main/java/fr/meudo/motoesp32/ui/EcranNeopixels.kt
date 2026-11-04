@@ -14,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -115,6 +116,13 @@ fun EcranNeopixels(modifier: Modifier, client: MotoBleClient) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { client.envoyerCommande("ANNONCER $annonce") }, enabled = annonce.isNotBlank()) { Text("Dire") }
                 TextButton(onClick = { client.envoyerCommande("SONS_INSTALLER") }) { Text("Installer les sons de la carte SD") }
+            }
+            Text("Diagnostic : le module fait un bip, dit une phrase et joue le son SMS, puis affiche ce que le modem a accepté.",
+                style = MaterialTheme.typography.bodySmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { client.envoyerCommande("SON_TEST") }) { Text("Tester") }
+                OutlinedButton(onClick = { client.envoyerCommande("SORTIE_AUDIO 3") }) { Text("Sortie HP") }
+                OutlinedButton(onClick = { client.envoyerCommande("SORTIE_AUDIO 1") }) { Text("Sortie écouteur") }
             }
             Text(
                 "Sons personnalisés : déposer /sons/sms.wav et /sons/sonnerie.wav sur la carte SD (WAV mono 8 kHz), " +

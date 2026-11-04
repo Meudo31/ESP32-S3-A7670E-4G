@@ -265,6 +265,14 @@ void commandeInstallerLesSons(const char* nom, const ArgumentsDeCommande&) {
     repondreALAppli(nom, compteRendu.indexOf("installé") >= 0, compteRendu.c_str());
 }
 
+void commandeTesterLeSon(const char* nom, const ArgumentsDeCommande&) {
+    testerLeHautParleurDuModule();   // le résultat arrive dans quelques secondes (réponse SON_TEST)
+}
+
+void commandeSortieAudio(const char* nom, const ArgumentsDeCommande& arguments) {
+    if (!choisirLaSortieDuHautParleur(arguments.premier.toInt())) repondreALAppli(nom, false, "Sortie 1 (combiné) ou 3 (haut-parleur)");
+}
+
 void commandeAnnoncer(const char* nom, const ArgumentsDeCommande& arguments) {
     annoncerAuHautParleur(arguments.tout);
     repondreALAppli(nom, true, "Annonce envoyée au haut-parleur");
@@ -359,6 +367,8 @@ const CommandeConnue COMMANDES[] = {
     { "VOLUME",              commandeVolume },
     { "SONS_INSTALLER",      commandeInstallerLesSons },
     { "ANNONCER",            commandeAnnoncer },
+    { "SON_TEST",            commandeTesterLeSon },
+    { "SORTIE_AUDIO",        commandeSortieAudio },
     { "NEO",                 commandeChoisirLAnimation },
     { "NEO_SUIVANTE",        commandeAnimationSuivante },
     { "NEO_LUMINOSITE",      commandeLuminosite },

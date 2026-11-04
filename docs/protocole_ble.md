@@ -81,6 +81,8 @@ Les arguments sont séparés du nom par un espace, et entre eux par `|`. Les nom
 | `APPELER numéro`, `DECROCHER`, `RACCROCHER` | Téléphone (sans micro pour l'instant : on entend seulement l'appelant) |
 | `VOLUME 0-5` | Volume du haut-parleur |
 | `ANNONCER texte` | Fait prononcer un texte au haut-parleur |
+| `SON_TEST` | Bip (`AT+SIMTONE`), phrase (`AT+CTTS`) et son SMS ; répond `SON_TEST` avec ce que le modem a accepté |
+| `SORTIE_AUDIO 1\|3` | Sortie audio du modem (`AT+CSDVC`) : 3 = haut-parleur (par défaut), 1 = combiné ; mémorisée, puis test |
 | `SONS_INSTALLER` | Copie `/sons/sms.wav` et `/sons/sonnerie.wav` de la carte SD dans le modem |
 | `NEO n`, `NEO_SUIVANTE`, `NEO_ONOFF`, `NEO_LUMINOSITE 0-255` | Bande NeoPixel |
 | `FICHIERS chemin` | Liste un dossier de la carte SD |
