@@ -149,7 +149,14 @@ private fun CarteOpenStreetMap(gps: EtatGps, trace: List<PointGps>, modifier: Mo
 }
 
 private fun creerLaCarte(context: Context): MapView {
-    Configuration.getInstance().userAgentValue = context.packageName
+    // Sans cette configuration, osmdroid essaie de ranger les tuiles dans /sdcard/osmdroid, interdit depuis
+    // Android 10 : la carte reste vierge. On charge ses réglages et on range les tuiles dans le cache de l'appli.
+    val configuration = Configuration.getInstance()
+    configuration.load(context, context.getSharedPreferences("osmdroid", Context.MODE_PRIVATE))
+    configuration.osmdroidBasePath = java.io.File(context.cacheDir, "osmdroid").apply { mkdirs() }
+    configuration.osmdroidTileCache = java.io.File(configuration.osmdroidBasePath, "tuiles").apply { mkdirs() }
+    // Les serveurs OpenStreetMap refusent les applications sans nom précis.
+    configuration.userAgentValue = "MotoESP32/${context.packageName}"
     return MapView(context).apply {
         setTileSource(TileSourceFactory.MAPNIK)
         setMultiTouchControls(true)
