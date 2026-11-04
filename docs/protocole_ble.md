@@ -82,6 +82,8 @@ Les arguments sont séparés du nom par un espace, et entre eux par `|`. Les nom
 | `APPELER numéro`, `DECROCHER`, `RACCROCHER` | Téléphone (sans micro pour l'instant : on entend seulement l'appelant) |
 | `VOLUME 0-5` | Volume du haut-parleur |
 | `ANNONCER texte` | Fait prononcer un texte au haut-parleur |
+| `WIFI_ON` | Ouvre le Wi-Fi « Moto_ESP32 » du module ; répond `nom\|mot de passe\|adresse` (voir ci-dessous) |
+| `WIFI_OFF` | Ferme le Wi-Fi du module (il se ferme aussi seul après 2 minutes sans requête) |
 | `SON_TEST` | Bip (`AT+SIMTONE`), phrase (`AT+CTTS`) et son SMS ; répond `SON_TEST` avec ce que le modem a accepté |
 | `SON_JOUER chemin` | Copie un son de la carte SD (WAV, AMR, MP3) dans le modem et le joue sur le haut-parleur |
 | `SORTIE_AUDIO 1\|3` | Sortie audio du modem (`AT+CSDVC`) : 3 = haut-parleur (par défaut), 1 = combiné ; mémorisée, puis test |
@@ -127,3 +129,10 @@ Le fichier à envoyer est `firmware.bin` : l'artefact **firmware-esp32** de l'ac
 ou `.pio/build/esp32-s3-devkitc-1/firmware.bin` après une compilation locale.
 La table `default_16MB.csv` contient deux partitions applicatives : une mise à jour interrompue laisse le module sur l'ancienne version.
 Pendant l'envoi, les données et le journal sont suspendus pour libérer la bande passante.
+
+## Gros transferts par Wi-Fi
+
+Pour la mise à jour du firmware et les fichiers de plus de 100 Ko, l'application (Android 10 et plus) demande `WIFI_ON`,
+se connecte au point d'accès du module comme réseau local (Internet reste sur la 4G), puis utilise le serveur web
+`http://192.168.4.1` : `GET /fichier?chemin=…`, `POST /fichier?chemin=…` et `POST /firmware` (multipart, champ `fichier`).
+Elle envoie ensuite `WIFI_OFF`. En cas d'échec, le transfert repart en Bluetooth. Détails dans `include/module_wifi.h`.

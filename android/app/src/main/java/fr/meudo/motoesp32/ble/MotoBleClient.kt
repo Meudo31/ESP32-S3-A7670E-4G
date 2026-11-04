@@ -101,6 +101,9 @@ sealed interface EtatOta {
  * Les permissions Bluetooth sont demandées par MainActivity avant tout appel.
  */
 @SuppressLint("MissingPermission")
+/** En dessous de cette taille, le Bluetooth suffit (se connecter au Wi-Fi prend quelques secondes). */
+private const val SEUIL_POUR_LE_WIFI = 100L * 1024
+
 class MotoBleClient(private val context: Context, private val scope: CoroutineScope) {
 
     private val adaptateur: BluetoothAdapter? =
@@ -142,6 +145,13 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
 
     private val _ota = MutableStateFlow<EtatOta>(EtatOta.Inactif)
     val ota: StateFlow<EtatOta> = _ota.asStateFlow()
+
+    // ─── Wi-Fi du module pour les gros transferts (le Bluetooth reste la liaison principale) ───
+    private val wifi = TransfertWifi(context)
+    private val reglages = context.getSharedPreferences("reglages", Context.MODE_PRIVATE)
+    private val _wifiAutorise = MutableStateFlow(reglages.getBoolean("wifi", true))
+    val wifiAutorise: StateFlow<Boolean> = _wifiAutorise.asStateFlow()
+    val wifiPossible: Boolean get() = wifi.disponible
 
     val bluetoothActif: Boolean get() = adaptateur?.isEnabled == true
 
@@ -454,6 +464,11 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
 
     fun effacerLogs() { _logs.value = emptyList() }
 
+    /** Ajoute une ligne de l'appli elle-même dans le journal affiché. */
+    private fun ajouterAuJournal(texte: String) {
+        _logs.update { (it + "${formatHeure.format(Date())}  [APPLI] $texte").takeLast(500) }
+    }
+
     /** Commande avec arguments séparés par « | » (ex. SMS_ENVOYER +336...|Bonjour). */
     fun envoyerCommande(nom: String, vararg arguments: String) {
         envoyerCommande(if (arguments.isEmpty()) nom else "$nom ${arguments.joinToString("|")}")
@@ -477,6 +492,26 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
         if (_etat.value != EtatConnexion.Connecte) return erreur("Module non connecté")
         if (firmware.size < 1024 || firmware[0] != Protocole.OCTET_MAGIQUE_FIRMWARE) {
             return erreur("Ce fichier n'est pas un firmware ESP32 (prendre firmware.bin dans .pio/build/…)")
+        }
+
+        if (wifiUtilisable(firmware.size.toLong())) {
+            _ota.value = EtatOta.EnCours(0f, "Connexion au Wi-Fi du module…")
+            val depart = System.currentTimeMillis()
+            val probleme = preparerLeWifi() ?: wifi.envoyerUnFirmware(firmware) { envoyes ->
+                val secondes = (System.currentTimeMillis() - depart) / 1000.0
+                val debit = if (secondes > 0) envoyes / 1024.0 / secondes else 0.0
+                _ota.value = EtatOta.EnCours(
+                    envoyes.toFloat() / firmware.size,
+                    "Wi-Fi : %d / %d Ko (%.0f Ko/s)".format(envoyes / 1024, firmware.size / 1024, debit),
+                )
+            }
+            if (probleme == null) {
+                libererLeWifi(fermerCoteModule = false)   // le module redémarre sur le nouveau firmware
+                _ota.value = EtatOta.Termine
+                return
+            }
+            libererLeWifi()
+            ajouterAuJournal("Wi-Fi : $probleme. Mise à jour par Bluetooth.")
         }
 
         _ota.value = EtatOta.EnCours(0f, "Préparation…")
@@ -571,8 +606,22 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
     private var attenteTelechargement: CompletableDeferred<ByteArray?>? = null
 
     /** Télécharge un fichier de la carte SD. Renvoie son contenu vérifié, ou null en cas d'échec. */
-    suspend fun telecharger(chemin: String): ByteArray? {
+    suspend fun telecharger(chemin: String, taille: Long = 0): ByteArray? {
         if (_telechargement.value is EtatTelechargement.EnCours) return null
+        if (wifiUtilisable(taille)) {
+            _telechargement.value = EtatTelechargement.EnCours(chemin, 0, taille)
+            val probleme = preparerLeWifi()
+            val octets = if (probleme == null) {
+                wifi.telecharger(chemin) { recus, total -> _telechargement.value = EtatTelechargement.EnCours(chemin, recus, total) }
+            } else null
+            libererLeWifi()
+            if (octets != null) {
+                _telechargement.value = EtatTelechargement.Termine(chemin, octets)
+                return octets
+            }
+            ajouterAuJournal("Wi-Fi : ${probleme ?: "téléchargement interrompu"}. Téléchargement par Bluetooth.")
+            _telechargement.value = EtatTelechargement.Inactif
+        }
         val attente = CompletableDeferred<ByteArray?>()
         attenteTelechargement = attente
         _telechargement.value = EtatTelechargement.EnCours(chemin, 0, 0)
@@ -592,6 +641,25 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
      * Chaque morceau est écrit avec accusé de réception, puis le module vérifie la taille et le CRC32.
      */
     suspend fun envoyerUnFichier(chemin: String, contenu: ByteArray): Boolean {
+        if (_envoi.value is EtatEnvoi.EnCours) return false
+        val total = contenu.size.toLong()
+        if (wifiUtilisable(total)) {
+            _envoi.value = EtatEnvoi.EnCours(chemin, 0, total)
+            val probleme = preparerLeWifi()
+                ?: wifi.envoyerUnFichier(chemin, contenu) { _envoi.value = EtatEnvoi.EnCours(chemin, it, total) }
+            libererLeWifi()
+            if (probleme == null) {
+                _envoi.value = EtatEnvoi.Termine(chemin)
+                actualiserLeDossier()
+                return true
+            }
+            ajouterAuJournal("Wi-Fi : $probleme. Envoi par Bluetooth.")
+            _envoi.value = EtatEnvoi.Inactif
+        }
+        return envoyerUnFichierEnBluetooth(chemin, contenu)
+    }
+
+    private suspend fun envoyerUnFichierEnBluetooth(chemin: String, contenu: ByteArray): Boolean {
         if (_envoi.value is EtatEnvoi.EnCours) return false
         envoiAnnule = false
         _envoi.value = EtatEnvoi.EnCours(chemin, 0, contenu.size.toLong())
@@ -645,6 +713,26 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
     fun signalerUneErreurDEnvoi(message: String) { _envoi.value = EtatEnvoi.Erreur("", message) }
 
     fun oublierLEnvoi() { if (_envoi.value !is EtatEnvoi.EnCours) _envoi.value = EtatEnvoi.Inactif }
+
+    fun autoriserLeWifi(autorise: Boolean) {
+        _wifiAutorise.value = autorise
+        reglages.edit().putBoolean("wifi", autorise).apply()
+    }
+
+    private fun wifiUtilisable(taille: Long): Boolean =
+        _wifiAutorise.value && wifi.disponible && taille >= SEUIL_POUR_LE_WIFI && _etat.value == EtatConnexion.Connecte
+
+    /** Demande au module d'ouvrir son Wi-Fi et s'y connecte. Renvoie null si c'est prêt, sinon la raison. */
+    private suspend fun preparerLeWifi(): String? {
+        val reponse = commandeAvecReponse("WIFI_ON", "WIFI_ON")
+        if (reponse == null || !reponse.ok) return reponse?.message ?: "Le module ne répond pas"
+        return wifi.rejoindre(reponse.message)
+    }
+
+    private fun libererLeWifi(fermerCoteModule: Boolean = true) {
+        wifi.quitter()
+        if (fermerCoteModule) envoyerCommande("WIFI_OFF")
+    }
 
     /** Envoie une commande et attend la réponse du module (null si rien au bout de 15 s). */
     private suspend fun commandeAvecReponse(nom: String, commande: String): ReponseCommande? = coroutineScope {
@@ -762,6 +850,7 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
     }
 
     fun liberer() {
+        wifi.quitter()
         adresseDuModule = null
         arreterLaReconnexion()
         arreterRecherche()

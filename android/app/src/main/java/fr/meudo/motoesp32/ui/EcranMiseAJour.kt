@@ -39,12 +39,15 @@ fun EcranMiseAJour(modifier: Modifier, viewModel: MotoViewModel) {
             Text(if (s == null) "Version inconnue" else "${s.versionFirmware} — compilé le ${s.compilation}")
         }
 
-        Carte("Mettre à jour par Bluetooth") {
+        CarteDuWifi(client)
+
+        Carte("Mettre à jour le firmware") {
             Text(
                 "1. Récupérer firmware.bin : artefact « firmware-esp32 » de GitHub Actions, " +
                     "ou .pio/build/esp32-s3-devkitc-1/firmware.bin après une compilation PlatformIO.\n" +
                     "2. Copier firmware.bin sur le téléphone.\n" +
-                    "3. Choisir ce fichier ci-dessous. Garder le téléphone près de la moto (1 à 3 minutes).",
+                    "3. Choisir ce fichier ci-dessous. Garder le téléphone près de la moto " +
+                    "(environ 20 s en Wi-Fi, 1 à 3 minutes en Bluetooth).",
                 style = MaterialTheme.typography.bodyMedium,
             )
             when (val o = ota) {
@@ -74,5 +77,29 @@ fun EcranMiseAJour(modifier: Modifier, viewModel: MotoViewModel) {
                 }
             }
         }
+    }
+}
+
+/** Réglage commun : utiliser le Wi-Fi du module pour les gros transferts. */
+@Composable
+fun CarteDuWifi(client: fr.meudo.motoesp32.ble.MotoBleClient) {
+    val autorise by client.wifiAutorise.collectAsStateWithLifecycle()
+    Carte("Wi-Fi pour les gros transferts") {
+        androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Text("Utiliser le Wi-Fi du module", modifier = Modifier.weight(1f))
+            androidx.compose.material3.Switch(
+                checked = autorise && client.wifiPossible,
+                onCheckedChange = { client.autoriserLeWifi(it) },
+                enabled = client.wifiPossible,
+            )
+        }
+        Text(
+            if (client.wifiPossible)
+                "Pour la mise à jour et les fichiers de plus de 100 Ko, le module ouvre son Wi-Fi « Moto_ESP32 » le temps " +
+                    "du transfert (environ 50 fois plus rapide). Android demande d'accepter ce réseau la première fois. " +
+                    "Internet reste sur la 4G. Si le Wi-Fi échoue, le transfert se fait en Bluetooth."
+            else "Nécessite Android 10 ou plus récent : les transferts se font en Bluetooth.",
+            style = MaterialTheme.typography.bodySmall,
+        )
     }
 }
