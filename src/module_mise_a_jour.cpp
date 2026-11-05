@@ -41,6 +41,10 @@ void commencer(const char* arguments) {
         repondre("ERR format : START <taille> <md5>");
         return;
     }
+    if (taille > ESP.getFreeSketchSpace()) {
+        repondre("ERR fichier trop gros pour la partition de mise à jour");
+        return;
+    }
     if (enCours) Update.abort();
     if (!Update.begin(taille, U_FLASH)) { echouer("début"); return; }
     if (nombreDeValeurs == 2 && strlen(empreinteMD5) == 32 && !Update.setMD5(empreinteMD5)) { echouer("md5"); return; }
@@ -86,6 +90,13 @@ void traiterUnOrdre(const MessageDeMiseAJour& message) {
 
 void ecrireUnMorceau(const MessageDeMiseAJour& message) {
     if (!enCours) return;
+    // Une image d'application ESP32 commence toujours par l'octet 0xE9.
+    if (tailleRecue == 0 && message.taille > 0 && message.octets[0] != 0xE9) {
+        Update.abort();
+        enCours = false;
+        repondre("ERR ce n'est pas un firmware ESP32");
+        return;
+    }
     if (tailleRecue + message.taille > tailleAttendue) {
         Update.abort();
         enCours = false;
