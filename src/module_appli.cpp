@@ -23,7 +23,6 @@
 #include "module_reseau_4g.h"
 #include "module_sms.h"
 #include "module_systeme.h"
-#include "module_wifi.h"
 #include "module_alertes_sms.h"
 
 #if __has_include("secrets.h")
@@ -326,17 +325,6 @@ void commandeTesterLesAlertes(const char* nom, const ArgumentsDeCommande&) {
     repondreALAppli(nom, reussi, reussi ? "SMS de test demandé" : "Aucun numéro enregistré");
 }
 
-void commandeOuvrirLeWifi(const char* nom, const ArgumentsDeCommande&) {
-    String reseau, motDePasse, adresse;
-    if (ouvrirLeWifi(reseau, motDePasse, adresse)) repondreALAppli(nom, true, (reseau + "|" + motDePasse + "|" + adresse).c_str());
-    else                                            repondreALAppli(nom, false, "Wi-Fi impossible à ouvrir");
-}
-
-void commandeFermerLeWifi(const char* nom, const ArgumentsDeCommande&) {
-    fermerLeWifi();
-    repondreALAppli(nom, true, "Wi-Fi fermé");
-}
-
 void commandeSortieAudio(const char* nom, const ArgumentsDeCommande& arguments) {
     if (!choisirLaSortieDuHautParleur(arguments.premier.toInt())) repondreALAppli(nom, false, "Sortie 1 (combiné) ou 3 (haut-parleur)");
 }
@@ -436,11 +424,9 @@ const CommandeConnue COMMANDES[] = {
     { "SONS_INSTALLER",      commandeInstallerLesSons },
     { "ANNONCER",            commandeAnnoncer },
     { "SON_TEST",            commandeTesterLeSon },
-    { "WIFI_ON",             commandeOuvrirLeWifi },
     { "ALERTES_NUMERO",      commandeNumeroDesAlertes },
     { "ALERTES",             commandeActiverLesAlertes },
     { "ALERTES_TEST",        commandeTesterLesAlertes },
-    { "WIFI_OFF",            commandeFermerLeWifi },
     { "SON_JOUER",           commandeJouerUnSon },
     { "SORTIE_AUDIO",        commandeSortieAudio },
     { "NEO",                 commandeChoisirLAnimation },

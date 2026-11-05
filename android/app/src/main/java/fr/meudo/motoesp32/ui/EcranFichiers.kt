@@ -110,7 +110,7 @@ fun EcranFichiers(modifier: Modifier, client: MotoBleClient) {
     fun telecharger(element: ElementFichier, pourApercu: Boolean) {
         val chemin = Protocole.chemin(dossier.chemin, element.nom)
         portee.launch {
-            val contenu = client.telecharger(chemin, element.taille) ?: return@launch
+            val contenu = client.telecharger(chemin) ?: return@launch
             if (pourApercu) apercu = element.nom to contenu
             else {
                 fichierAEnregistrer = element.nom to contenu
