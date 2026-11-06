@@ -1,0 +1,1088 @@
+<title>Anatomie du firmware Moto_ESP32</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Mise en page : fiche technique d'instrument de bord. Carte du système en tête, puis sections de référence.
+   Cœur 0 = bleu radio, cœur 1 = ambre traitement, matériel = gris acier. */
+:root{
+  --bg:#f3f5f8; --panel:#ffffff; --sunk:#e9edf2; --ink:#121821; --muted:#566173; --line:#d3d9e2;
+  --c0:#2459c2; --c0t:#e3ecfb; --c1:#b56d00; --c1t:#fbf0dd; --hw:#5d6b7c; --hwt:#eceff3; --sys:#6b4fb3; --syst:#efe9fa;
+  --accent:#d9480f;
+  --k-queue:#0f8577; --k-mutex:#7a43c9; --k-notify:#d9480f; --k-urc:#c4263a; --k-hw:#5d6b7c; --k-call:#566173;
+  --ok:#1f8a4c; --warn:#b26a00; --crit:#c4263a;
+  --f-disp:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0e1116; --panel:#161b23; --sunk:#1c222c; --ink:#e5e9ef; --muted:#9aa4b4; --line:#2a313d;
+  --c0:#79a5f5; --c0t:#18233a; --c1:#eaa83f; --c1t:#2b2214; --hw:#94a2b4; --hwt:#1d232c; --sys:#a68cf0; --syst:#221c35;
+  --accent:#ff7a3d;
+  --k-queue:#3cc4b2; --k-mutex:#b48cf5; --k-notify:#ff8a50; --k-urc:#ff6b7d; --k-hw:#94a2b4; --k-call:#9aa4b4;
+  --ok:#4cc97f; --warn:#f0b04a; --crit:#ff6b7d; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e1116; --panel:#161b23; --sunk:#1c222c; --ink:#e5e9ef; --muted:#9aa4b4; --line:#2a313d;
+  --c0:#79a5f5; --c0t:#18233a; --c1:#eaa83f; --c1t:#2b2214; --hw:#94a2b4; --hwt:#1d232c; --sys:#a68cf0; --syst:#221c35;
+  --accent:#ff7a3d;
+  --k-queue:#3cc4b2; --k-mutex:#b48cf5; --k-notify:#ff8a50; --k-urc:#ff6b7d; --k-hw:#94a2b4; --k-call:#9aa4b4;
+  --ok:#4cc97f; --warn:#f0b04a; --crit:#ff6b7d; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.55;margin:0}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--panel)}
+.wrap{max-width:1320px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+h1,h2,h3{font-family:var(--f-disp);text-wrap:balance;margin:0;letter-spacing:.01em}
+h1{font-size:clamp(34px,5vw,56px);font-weight:700;line-height:1}
+h2{font-size:30px;font-weight:600;line-height:1.1}
+h3{font-size:20px;font-weight:600}
+p{margin:0}
+code,.mono{font-family:var(--f-mono);font-size:.86em}
+code{background:var(--sunk);padding:1px 5px;border-radius:3px}
+a{color:var(--c0)}
+.eyebrow{font-family:var(--f-mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.muted{color:var(--muted)}
+
+header.top{background:var(--panel);border-bottom:1px solid var(--line)}
+header.top .wrap{padding-block:28px 22px;display:grid;gap:14px}
+.lede{max-width:72ch;color:var(--muted)}
+.specs{display:flex;flex-wrap:wrap;gap:8px 22px;font-family:var(--f-mono);font-size:12.5px}
+.specs b{font-weight:500;color:var(--ink)}
+.specs span{color:var(--muted)}
+
+nav.toc{position:sticky;top:env(safe-area-inset-top,0px);z-index:9;background:var(--panel);border-bottom:1px solid var(--line)}
+nav.toc .wrap{display:flex;gap:4px;overflow-x:auto;padding-block:8px;scrollbar-width:thin}
+nav.toc a{font-family:var(--f-disp);font-weight:600;font-size:16px;letter-spacing:.03em;text-decoration:none;color:var(--muted);padding:4px 10px;border-radius:4px;white-space:nowrap}
+nav.toc a:hover,nav.toc a:focus-visible{color:var(--ink);background:var(--sunk);outline:none}
+
+section{padding-block:44px 8px}
+section > .wrap{display:grid;gap:18px}
+.sec-head{display:grid;gap:6px;max-width:80ch}
+.sec-head p{color:var(--muted)}
+
+/* ── Carte ── */
+.map-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;align-items:start}
+#carte .wrap{max-width:1780px}
+@media (min-width:1640px){.map-grid{grid-template-columns:minmax(0,1fr) 400px}}
+.svgbox{background:var(--panel);border:1px solid var(--line);border-radius:6px;overflow-x:auto}
+.svgbox svg{display:block;width:100%;height:auto}
+#map svg{min-width:900px}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--muted);padding:10px 14px;border-top:1px solid var(--line)}
+.legend i{display:inline-block;width:22px;height:0;border-top:2.5px solid;vertical-align:middle;margin-right:6px}
+.node{cursor:pointer}
+.node rect{transition:opacity .15s}
+.node:focus{outline:none}
+.node:focus-visible rect.box{stroke-width:3}
+.edge{transition:opacity .15s}
+.dim{opacity:.13}
+.elabel{font-family:var(--f-mono);font-size:10.5px;paint-order:stroke;stroke:var(--panel);stroke-width:4px;stroke-linejoin:round}
+
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:6px}
+@media (min-width:1640px){.panel{position:sticky;top:calc(env(safe-area-inset-top,0px) + 58px);max-height:calc(100vh - 80px);overflow:auto}}
+@media (max-width:1639px){.panel .pb{grid-template-columns:repeat(auto-fit,minmax(300px,1fr));column-gap:28px;align-items:start}}
+.badge circle{stroke:var(--panel);stroke-width:2}
+.badge text{font-family:var(--f-mono);font-size:10px;font-weight:500;fill:#fff}
+.panel .ph{padding:14px 16px 12px;border-bottom:1px solid var(--line);display:grid;gap:6px}
+.panel .ph h3{font-size:24px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-family:var(--f-mono);font-size:11px;padding:2px 7px;border-radius:3px;border:1px solid var(--line);background:var(--sunk);white-space:nowrap}
+.chip.c0{border-color:var(--c0);color:var(--c0);background:var(--c0t)}
+.chip.c1{border-color:var(--c1);color:var(--c1);background:var(--c1t)}
+.chip.hw{border-color:var(--hw);color:var(--hw);background:var(--hwt)}
+.chip.sys{border-color:var(--sys);color:var(--sys);background:var(--syst)}
+.panel .pb{padding:4px 16px 16px;display:grid;gap:14px}
+.blk{display:grid;gap:5px}
+.blk h4{margin:10px 0 0;font-family:var(--f-mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:500}
+.blk.why h4{color:var(--ok)} .blk.alt h4{color:var(--c0)} .blk.watch h4{color:var(--warn)}
+.blk ul{margin:0;padding-left:18px;display:grid;gap:4px}
+.blk p,.blk li{font-size:14px}
+.panel .file{font-family:var(--f-mono);font-size:11.5px;color:var(--muted)}
+
+/* ── Tableaux ── */
+.tblbox{background:var(--panel);border:1px solid var(--line);border-radius:6px;overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:13.5px}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-family:var(--f-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500;background:var(--sunk);position:sticky;top:0}
+td.num{font-variant-numeric:tabular-nums;font-family:var(--f-mono);font-size:12.5px;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+tbody tr.click{cursor:pointer}
+tbody tr.click:hover{background:var(--sunk)}
+.bar{height:8px;border-radius:2px;background:var(--c0);display:block;min-width:2px}
+.bar.c1{background:var(--c1)} .bar.sys{background:var(--sys)}
+.filters{display:flex;gap:6px;flex-wrap:wrap}
+button.f,button.tab,button.step{font-family:var(--f-body);font-size:13.5px;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:6px 12px;border-radius:4px;cursor:pointer}
+button.f[aria-pressed="true"],button.tab[aria-selected="true"]{background:var(--ink);color:var(--panel);border-color:var(--ink)}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+@media (max-width:900px){.two{grid-template-columns:minmax(0,1fr)}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:16px;display:grid;gap:10px;min-width:0;align-content:start}
+figure{margin:0;display:grid;gap:8px}
+figcaption{font-size:13px;color:var(--muted);max-width:90ch}
+
+/* ── Séquences ── */
+.tabs{display:flex;gap:6px;flex-wrap:wrap}
+.seq-grid{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:16px;align-items:start}
+@media (max-width:1100px){.seq-grid{grid-template-columns:minmax(0,1fr)}}
+.seq-row{cursor:pointer}
+.seq-ctrl{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.seq-ctrl .count{font-family:var(--f-mono);font-size:12.5px;color:var(--muted);margin-left:auto}
+.stepcard{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:16px;display:grid;gap:10px;position:sticky;top:calc(env(safe-area-inset-top,0px) + 58px)}
+@media (max-width:1100px){.stepcard{position:static}}
+.stepcard .n{font-family:var(--f-disp);font-size:44px;font-weight:700;line-height:1;color:var(--accent)}
+.stepcard pre{margin:0;font-family:var(--f-mono);font-size:12px;background:var(--sunk);padding:8px 10px;border-radius:4px;overflow-x:auto;white-space:pre}
+
+/* ── Partitions ── */
+.parts{display:flex;height:64px;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--panel)}
+.part{display:flex;flex-direction:column;justify-content:center;padding:0 8px;border-right:1px solid var(--line);font-family:var(--f-mono);font-size:11px;min-width:0;overflow:hidden;white-space:nowrap;cursor:pointer}
+.part:last-child{border-right:0}
+.part b{font-weight:500;font-size:12px}
+.part.app0{background:var(--c0t)} .part.app1{background:var(--c1t)} .part.small{background:var(--sunk)} .part.free{background:var(--hwt)}
+.part.sel{outline:2px solid var(--accent);outline-offset:-2px}
+
+/* ── Décisions ── */
+.dec{display:grid;gap:12px}
+.decrow{display:grid;grid-template-columns:220px minmax(0,1fr) minmax(0,1fr);gap:14px;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px 16px}
+@media (max-width:900px){.decrow{grid-template-columns:minmax(0,1fr)}}
+.decrow h3{font-size:19px}
+.decrow .lbl{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:3px}
+.decrow .lbl.y{color:var(--ok)} .decrow .lbl.n{color:var(--crit)}
+.decrow p{font-size:14px}
+
+.watchlist{display:grid;gap:10px}
+.w{display:grid;grid-template-columns:96px minmax(0,1fr);gap:12px;background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--warn);border-radius:4px;padding:12px 14px}
+.w.crit{border-left-color:var(--crit)} .w.info{border-left-color:var(--c0)}
+.w .sev{font-family:var(--f-mono);font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.w h3{font-size:18px;margin-bottom:3px}
+.w p{font-size:14px}
+@media (max-width:600px){.w{grid-template-columns:minmax(0,1fr)}}
+
+.pin-grid{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:16px;align-items:start}
+@media (max-width:1100px){.pin-grid{grid-template-columns:minmax(0,1fr)}}
+#pinsvg{min-width:640px}
+.pin{cursor:pointer}
+.pin:focus{outline:none}
+.pin:focus-visible rect{stroke-width:3}
+.pinlegend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--muted);padding:10px 14px;border-top:1px solid var(--line)}
+.pinlegend i{display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:-1px;margin-right:6px;border:1.5px solid}
+footer{padding-block:40px 60px;color:var(--muted);font-size:13px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<header class="top"><div class="wrap">
+  <span class="eyebrow">Firmware 0.4.4 · Waveshare ESP32-S3 A7670E 4G · Arduino 2.0.x / ESP-IDF 4.4 · FreeRTOS</span>
+  <h1>Anatomie du firmware Moto_ESP32</h1>
+  <p class="lede">Une carte du système que l'on peut fouiller : chaque bloc s'ouvre sur son rôle, sa tâche FreeRTOS (cœur, priorité, pile), ses primitives de synchronisation, la raison du choix et les solutions écartées. Plus bas : les tâches à l'échelle, toutes les files et verrous, les séquences pas à pas (démarrage, AT, OTA, fichiers, appel), le modem, le GATT, la mémoire et ce qui reste à surveiller.</p>
+  <div class="specs">
+    <span><b>19</b> modules</span><span><b>19</b> tâches applicatives</span><span><b>88 Ko</b> de piles</span><span><b>9</b> files · <b>8</b> verrous · <b>1</b> groupe d'événements</span><span><b>8</b> caractéristiques GATT</span><span><b>39</b> commandes BLE</span><span>flash <b>16 Mo</b> · PSRAM <b>8 Mo OPI</b> (V2)</span>
+  </div>
+</div></header>
+
+<nav class="toc" aria-label="Sections"><div class="wrap">
+  <a href="#carte">Carte</a><a href="#taches">Tâches</a><a href="#synchro">Synchro</a><a href="#sequences">Séquences</a><a href="#modem">Modem AT</a><a href="#ble">Bluetooth</a><a href="#memoire">Mémoire</a><a href="#brochage">Brochage</a><a href="#choix">Choix</a><a href="#attention">À surveiller</a>
+</div></nav>
+
+<section id="carte"><div class="wrap">
+  <div class="sec-head">
+    <span class="eyebrow">01 · Vue d'ensemble</span>
+    <h2>Qui parle à qui, sur quel cœur</h2>
+    <p>Les tâches de communication (pile Bluetooth, modem et ses clients) sont épinglées sur le cœur 0 ; tout ce qui touche la carte SD, la caméra, les LED et les capteurs est sur le cœur 1. Cliquez un bloc : ses liens s'allument et se numérotent, le détail (rôle, primitives, liens numérotés, raisons du choix) s'affiche à côté ou dessous.</p>
+  </div>
+  <div class="map-grid">
+    <div class="svgbox" id="map">
+      <svg id="mapsvg" viewBox="0 0 1290 630" role="img" aria-label="Carte des modules : matériel à gauche et à droite, tâches du cœur 0 et du cœur 1 au centre, reliées par files, verrous, notifications et URC du modem."></svg>
+      <div class="legend">
+        <span><i style="border-color:var(--k-queue)"></i>file FreeRTOS</span>
+        <span><i style="border-color:var(--k-mutex)"></i>appel sous verrou</span>
+        <span><i style="border-color:var(--k-notify)"></i>notification de tâche / ISR</span>
+        <span><i style="border-color:var(--k-urc);border-top-style:dashed"></i>URC du modem (rappel)</span>
+        <span><i style="border-color:var(--k-hw)"></i>bus matériel</span>
+        <span><i style="border-color:var(--k-call);border-top-style:dotted"></i>appel direct / état partagé</span>
+      </div>
+    </div>
+    <aside class="panel" id="panel" aria-live="polite"></aside>
+  </div>
+</div></section>
+
+<section id="taches"><div class="wrap">
+  <div class="sec-head">
+    <span class="eyebrow">02 · Ordonnancement</span>
+    <h2>19 tâches, deux cœurs, trois priorités</h2>
+    <p>Toutes les tâches sont créées par <code>creerTacheSurveillee()</code> (module système), qui appelle <code>xTaskCreatePinnedToCore</code> et garde la poignée pour mesurer la pile restante. Sur ESP-IDF, la taille de pile est en <b>octets</b> (<code>StackType_t</code> = <code>uint8_t</code>).</p>
+  </div>
+  <div class="two">
+    <figure class="card">
+      <h3>Carte des priorités</h3>
+      <div class="svgbox" style="border:0"><svg id="priosvg" viewBox="0 0 780 600" role="img" aria-label="Échelle des priorités FreeRTOS de 0 à 24 : les tâches système (IPC, contrôleur BT, esp_timer, Bluedroid) entre 19 et 24, les tâches du firmware entre 1 et 3."></svg></div>
+      <figcaption>Les tâches du firmware vivent entre 1 et 3, très en dessous de la pile Bluetooth (19 à 23), d'esp_timer (22) et des tâches IPC (24). Une boucle trop longue dans un module ne peut donc jamais affamer la radio. Valeurs système : défauts d'ESP-IDF 4.4.</figcaption>
+    </figure>
+    <div class="card">
+      <h3>Pourquoi ces trois niveaux</h3>
+      <div class="blk"><p><b>Haute (3)</b> : <code>Modem</code> et <code>Mise a jour</code>. Le lecteur d'URC doit vider l'UART avant les clients qui le polluent ; la tâche de mise à jour doit consommer sa file aussitôt, sinon la tâche BTC de Bluedroid reste bloquée dans <code>xQueueSend</code> (jusqu'à 3 s).</p></div>
+      <div class="blk"><p><b>Normale (2)</b> : ce qui réagit à un événement humain ou radio (SMS, appels, haut-parleur, bouton, caméra, réception de fichier). Un SMS entrant passe devant le sondage GPS.</p></div>
+      <div class="blk"><p><b>Basse (1)</b> : les boucles périodiques (GPS 1 s, réseau 10 s, batterie 5 s, LED 20 ms, journal, système, appli BLE). Même priorité que <code>loopTask</code> d'Arduino (supprimée à la fin du <code>setup()</code>), donc partage du temps par tranche de 1 ms entre elles.</p></div>
+      <div class="blk"><p><b>Aucune n'est en temps réel dur</b> : tout passe par <code>vTaskDelay</code>, <code>xQueueReceive</code> avec délai ou <code>ulTaskNotifyTake</code>. Aucune attente active, ce qui laisse tourner la tâche Idle du cœur 0, surveillée par le chien de garde des tâches (TWDT).</p></div>
+    </div>
+  </div>
+  <div class="filters" role="group" aria-label="Filtrer les tâches">
+    <button class="f" data-f="all" aria-pressed="true">Toutes</button>
+    <button class="f" data-f="0" aria-pressed="false">Cœur 0</button>
+    <button class="f" data-f="1" aria-pressed="false">Cœur 1</button>
+    <button class="f" data-f="sys" aria-pressed="false">Système (ESP-IDF)</button>
+  </div>
+  <div class="tblbox"><table id="tasktbl">
+    <thead><tr><th>Tâche</th><th>Module</th><th>Cœur</th><th>Prio</th><th>Pile</th><th style="width:22%">Taille</th><th>Elle attend sur</th></tr></thead>
+    <tbody></tbody>
+  </table></div>
+</div></section>
+
+<section id="synchro"><div class="wrap">
+  <div class="sec-head">
+    <span class="eyebrow">03 · Synchronisation</span>
+    <h2>Toutes les files, verrous et notifications</h2>
+    <p>Règle générale du firmware : <b>un module possède son état et sa ressource</b>. Les autres lui envoient une demande (file ou notification) ou lisent une <b>copie</b> de son état prise sous verrou. Les rappels Bluetooth et les rappels d'URC ne font jamais d'entrée-sortie lente : ils copient et déposent.</p>
+  </div>
+  <div class="tblbox"><table id="synctbl">
+    <thead><tr><th>Objet</th><th>Type</th><th>Taille</th><th>Producteurs</th><th>Consommateur</th><th>Attente</th><th>Pourquoi ce type</th></tr></thead>
+    <tbody></tbody>
+  </table></div>
+</div></section>
+
+<section id="sequences"><div class="wrap">
+  <div class="sec-head">
+    <span class="eyebrow">04 · Séquences</span>
+    <h2>Pas à pas, dans le code</h2>
+    <p>Chaque scénario suit les messages entre tâches. Avancez avec les boutons ou les flèches du clavier ; cliquez une ligne pour y sauter.</p>
+  </div>
+  <div class="tabs" role="tablist" id="seqtabs"></div>
+  <div class="seq-grid">
+    <div class="svgbox" id="seqbox"><svg id="seqsvg" role="img" aria-label="Diagramme de séquence"></svg></div>
+    <div class="stepcard" id="stepcard"></div>
+  </div>
+</div></section>
+
+<section id="modem"><div class="wrap">
+  <div class="sec-head">
+    <span class="eyebrow">05 · Modem A7670E</span>
+    <h2>Un seul fil, un seul propriétaire</h2>
+    <p>L'UART1 (115200 8N1, tampon de réception 4 Ko) est lu et écrit uniquement par <code>module_modem.cpp</code>. Les clients appellent <code>envoyerCommandeAT()</code>, qui prend le verrou récursif, vide les URC en attente, écrit, puis lit ligne par ligne jusqu'à <code>OK</code>/<code>ERROR</code>/<code>+CME ERROR</code>/<code>+CMS ERROR</code>, en distribuant au passage les URC qui arrivent au milieu.</p>
+  </div>
+  <div class="two">
+    <figure class="card">
+      <h3>Vie de la tâche Modem</h3>
+      <div class="svgbox" style="border:0"><svg viewBox="0 0 600 430" role="img" aria-label="Machine à états de la tâche Modem : recherche sur 17/18 puis 18/17, appui PWRKEY au troisième échec, réglages, prêt, puis boucle de lecture des URC toutes les 20 ms.">
+        <defs><marker id="ma" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+        <g fill="none" stroke="currentColor" stroke-width="1.5" style="color:var(--muted)">
+          <line x1="150" y1="62" x2="150" y2="98" marker-end="url(#ma)"/>
+          <line x1="150" y1="142" x2="150" y2="178" marker-end="url(#ma)"/>
+          <path d="M240,200 C300,200 300,120 240,120" marker-end="url(#ma)"/>
+          <path d="M60,200 C10,200 10,300 60,300" marker-end="url(#ma)"/>
+          <line x1="150" y1="222" x2="150" y2="278" marker-end="url(#ma)"/>
+          <line x1="240" y1="300" x2="350" y2="300" marker-end="url(#ma)"/>
+          <line x1="440" y1="322" x2="440" y2="358" marker-end="url(#ma)"/>
+          <path d="M530,380 C590,380 590,340 530,340" marker-end="url(#ma)"/>
+        </g>
+        <g font-family="var(--f-body)" font-size="12.5">
+          <rect x="60" y="20" width="180" height="42" rx="4" fill="var(--sunk)" stroke="var(--line)"/><text x="150" y="46" text-anchor="middle" fill="var(--ink)">demarrerModuleModem()</text>
+          <rect x="60" y="100" width="180" height="42" rx="4" fill="var(--c0t)" stroke="var(--c0)"/><text x="150" y="119" text-anchor="middle" fill="var(--ink)" font-weight="600">AT sur RX17 / TX18</text><text x="150" y="134" text-anchor="middle" fill="var(--muted)" font-size="11">3 essais × 500 ms</text>
+          <rect x="60" y="180" width="180" height="42" rx="4" fill="var(--c0t)" stroke="var(--c0)"/><text x="150" y="199" text-anchor="middle" fill="var(--ink)" font-weight="600">AT sur RX18 / TX17</text><text x="150" y="214" text-anchor="middle" fill="var(--muted)" font-size="11">sens non documenté</text>
+          <text x="300" y="164" fill="var(--muted)" font-size="11">échec : attendre 5 s,</text><text x="300" y="178" fill="var(--muted)" font-size="11">PWRKEY au 3e tour si câblée</text>
+          <text x="2" y="256" fill="var(--muted)" font-size="11">OK</text>
+          <rect x="60" y="280" width="180" height="42" rx="4" fill="var(--c0t)" stroke="var(--c0)"/><text x="150" y="299" text-anchor="middle" fill="var(--ink)" font-weight="600">reglerLeModem()</text><text x="150" y="314" text-anchor="middle" fill="var(--muted)" font-size="11">ATE0, CMEE=2, CPIN, UCS2…</text>
+          <text x="295" y="292" text-anchor="middle" fill="var(--muted)" font-size="11">SetBits</text>
+          <rect x="350" y="280" width="180" height="42" rx="4" fill="var(--panel)" stroke="var(--ok)" stroke-width="2"/><text x="440" y="299" text-anchor="middle" fill="var(--ink)" font-weight="600">BIT_MODEM_PRET</text><text x="440" y="314" text-anchor="middle" fill="var(--muted)" font-size="11">7 tâches clientes libérées</text>
+          <rect x="350" y="360" width="180" height="42" rx="4" fill="var(--c0t)" stroke="var(--c0)"/><text x="440" y="379" text-anchor="middle" fill="var(--ink)" font-weight="600">Lecteur d'URC</text><text x="440" y="394" text-anchor="middle" fill="var(--muted)" font-size="11">available() && take(0), 20 ms</text>
+        </g>
+      </svg></div>
+      <figcaption>La recherche ne s'arrête jamais : sans modem, les tâches clientes restent bloquées sur <code>xEventGroupWaitBits(…, portMAX_DELAY)</code> sans consommer de CPU, et <code>envoyerCommandeAT()</code> renvoie <code>MODEM_ABSENT</code> immédiatement aux appels venus de l'application.</figcaption>
+    </figure>
+    <div class="card">
+      <h3>Anatomie d'une transaction AT</h3>
+      <div class="stepcard" style="position:static;border:0;padding:0">
+<pre>prendreLeModem(délai + 5000)        // xSemaphoreTakeRecursive
+traiterLesLignesEnAttente()          // URC déjà arrivées → abonnés
+print("AT+CGNSSINFO\r")
+boucle lireUneLigne(20 ms)
+  ""  ou écho                    → ignorée
+  "OK" / "ERROR" / "+CME ERROR"  → fin
+  préfixe abonné ("+CMTI:"…)     → rappel, continue
+  sinon                          → ajoutée à *reponse
+rendreLeModem()</pre></div>
+      <div class="blk why"><h4>Pourquoi récursif</h4><p>Le module SMS prend le verrou une fois pour toute la séquence <code>CSCS="GSM"</code> → <code>CSMP</code> → <code>CMGS</code> → <code>CSCS="UCS2"</code>, puis chaque <code>envoyerCommandeAT()</code> à l'intérieur le reprend. Personne ne peut changer le jeu de caractères entre deux lignes.</p></div>
+      <div class="blk why"><h4>Pourquoi vider avant d'écrire</h4><p>Une URC arrivée entre deux commandes serait sinon lue comme première ligne de la réponse suivante (par exemple <code>RING</code> pris pour le résultat de <code>AT+CSQ</code>).</p></div>
+      <div class="blk"><h4>Envoi avec données</h4><p><code>envoyerCommandeATAvecDonnees()</code> attend l'invite <code>&gt;</code> (sans fin de ligne) caractère par caractère pendant 5 s, écrit le binaire, puis <code>Ctrl-Z</code> (SMS) ou rien (<code>AT+CFTRANRX</code>, taille annoncée). Sans invite : <code>Échap</code> pour annuler la saisie côté modem.</p></div>
+    </div>
+  </div>
+  <div class="tblbox"><table id="attbl">
+    <thead><tr><th>Module</th><th>Commandes AT</th><th>Cadence</th><th>Délai max</th></tr></thead>
+    <tbody></tbody>
+  </table></div>
+</div></section>
+
+<section id="ble"><div class="wrap">
+  <div class="sec-head">
+    <span class="eyebrow">06 · Bluetooth Low Energy</span>
+    <h2>Un service, huit caractéristiques, tout chiffré</h2>
+    <p>Pile Bluedroid (bibliothèque <code>BLEDevice</code> d'Arduino), nom <code>Moto_ESP32</code>, MTU demandé 517, puissance +18 dBm (annonce, balayage et liaisons). Toutes les caractéristiques et leurs descripteurs CCCD exigent <code>ESP_GATT_PERM_*_ENC_MITM</code> : sans appairage par code PIN, rien n'est lisible ni inscriptible.</p>
+  </div>
+  <div class="two">
+    <div class="tblbox"><table id="gatttbl">
+      <thead><tr><th>UUID</th><th>Nom</th><th>Prop.</th><th>Rappel / émetteur</th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+    <figure class="card">
+      <h3>Une connexion, chronologie</h3>
+      <div class="svgbox" style="border:0"><svg viewBox="0 0 560 360" role="img" aria-label="Chronologie d'une connexion : connexion, chiffrement et code PIN, authentification, envoi de l'état après 1,5 s, puis demande d'un délai de supervision de 20 s après 15 s si le téléphone a imposé 5 s.">
+        <g font-family="var(--f-body)" font-size="12">
+          <line x1="40" y1="20" x2="40" y2="340" stroke="var(--line)" stroke-width="2"/>
+          <g id="tl"></g>
+        </g>
+      </svg></div>
+      <figcaption>La demande de paramètres tolérants n'est pas faite dans <code>onConnect</code> : elle croisait la procédure du téléphone et le chiffrement, ce qui coupait la liaison 40 s plus tard (raison <code>0x22</code>, procédure LL sans réponse).</figcaption>
+    </figure>
+  </div>
+  <div class="two">
+    <div class="card">
+      <h3>Sécurité</h3>
+      <div class="blk"><p><code>ESP_LE_AUTH_REQ_SC_MITM_BOND</code> : LE Secure Connections (ECDH P-256), protection MITM par code fixe <code>SECRET_BLE_PIN</code> (dans <code>secrets.h</code>, jamais publié), clé de liaison stockée en NVS (bonding).</p></div>
+      <div class="blk"><p><code>onConfirmPIN</code> renvoie <code>false</code> : pas de comparaison numérique, le module n'a pas d'écran. Échec d'authentification → <code>disconnect()</code>.</p></div>
+      <div class="blk"><p>Double garde : la permission GATT refuse l'accès non chiffré, et chaque <code>onWrite</code> vérifie aussi <code>telephoneAuthentifie</code>.</p></div>
+      <div class="blk alt"><h4>Écarté</h4><p>Just Works (aucune protection MITM, n'importe qui à 30 m pilote les SMS et appels) ; un mot de passe applicatif dans le protocole (en clair sans chiffrement de lien).</p></div>
+    </div>
+    <div class="card">
+      <h3>Débit et contre-pression</h3>
+      <div class="blk"><p><b>Vers le téléphone</b> : <code>notifier()</code> est sérialisé par <code>verrouDesNotifications</code> et marque une pause de 8 ms après chaque notification. Sans pause, une rafale (état complet, page de dossier) remplissait les tampons du contrôleur et Android coupait. Plafond théorique ≈ 125 notifications/s, soit ≈ 60 Ko/s à 509 octets.</p></div>
+      <div class="blk"><p><b>Téléchargement</b> : fenêtre de 8 morceaux, puis attente de <code>DL_ACK &lt;octets&gt;</code> (5 s max). Contrôle de flux applicatif, car une notification n'a pas d'accusé.</p></div>
+      <div class="blk"><p><b>Vers le module</b> (OTA, fichier entrant) : écriture <i>avec</i> réponse. Le rappel bloque la tâche BTC dans <code>xQueueSend</code> quand la file est pleine, les écritures suivantes ne sont plus traitées, le téléphone ralentit de lui-même.</p></div>
+      <div class="blk"><p><b>Taille utile</b> : <code>min(MTU − 3, 500)</code>. Un JSON plus long est refusé (journal série), d'où la liste des tâches en paquets de 5 et les pages de dossier de 380 octets.</p></div>
+    </div>
+  </div>
+</div></section>
+
+<section id="memoire"><div class="wrap">
+  <div class="sec-head">
+    <span class="eyebrow">07 · Mémoire</span>
+    <h2>Flash, RAM interne, PSRAM</h2>
+    <p>Table <code>default_16MB.csv</code>, flash QIO 80 MHz, PSRAM octale (<code>qio_opi</code>, puce S3R8 de la V2). Cliquez une partition.</p>
+  </div>
+  <div class="parts" id="parts"></div>
+  <div class="card" id="partinfo"></div>
+  <div class="two">
+    <div class="card">
+      <h3>RAM interne (≈ 320 Ko de tas au démarrage)</h3>
+      <div class="tblbox" style="border:0"><table id="ramtbl"><thead><tr><th>Poste</th><th>Taille</th><th>Remarque</th></tr></thead><tbody></tbody></table></div>
+    </div>
+    <div class="card">
+      <h3>PSRAM (8 Mo)</h3>
+      <div class="tblbox" style="border:0"><table id="psramtbl"><thead><tr><th>Poste</th><th>Taille</th><th>Remarque</th></tr></thead><tbody></tbody></table></div>
+      <div class="blk why"><h4>Le principe</h4><p>La RAM interne est réservée à ce qui doit être rapide ou accessible quand le cache flash est coupé (piles, files de petits messages, Bluedroid, DMA SDMMC). Les gros tampons tolérants à la latence partent en PSRAM. Une file en PSRAM se crée avec <code>xQueueCreateStatic</code> et un stockage <code>heap_caps_malloc(MALLOC_CAP_SPIRAM)</code>, car <code>xQueueCreate</code> alloue en interne.</p></div>
+      <h3 style="margin-top:6px">NVS (Preferences)</h3>
+      <div class="tblbox" style="border:0"><table id="nvstbl"><thead><tr><th>Espace</th><th>Clés</th><th>Écrit par</th></tr></thead><tbody></tbody></table></div>
+    </div>
+  </div>
+</div></section>
+
+<section id="brochage"><div class="wrap">
+  <div class="sec-head">
+    <span class="eyebrow">08 · Brochage</span>
+    <h2>Les deux connecteurs, broche par broche</h2>
+    <p>D'après l'image de brochage Waveshare extraite par Meudo (<code>ESP32-A7970_Brochage.png</code> et <code>.csv</code> à la racine du dépôt), confrontée à <code>configuration.h</code> et <code>module_carte.cpp</code>. Les broches de caméra de l'image sont celles de la carte V2. Cliquez une broche.</p>
+  </div>
+  <div class="pin-grid">
+    <div class="svgbox"><svg id="pinsvg" viewBox="0 0 700 690" role="img" aria-label="Connecteurs 1 (broches impaires) et 2 (broches paires) de la carte, chaque broche colorée selon son usage : utilisée par le firmware, câblée sur la carte, libre, ou alimentation."></svg>
+      <div class="pinlegend">
+        <span><i style="border-color:var(--ok);background:var(--panel)"></i>utilisée par le firmware, conforme</span>
+                <span><i style="border-color:var(--hw);background:var(--hwt)"></i>câblée sur la carte, non utilisée</span>
+        <span><i style="border-color:var(--line);background:var(--panel)"></i>libre</span>
+        <span><i style="border-color:var(--line);background:var(--sunk)"></i>alimentation / masse</span>
+      </div>
+    </div>
+    <div class="card" id="pininfo"></div>
+  </div>
+</div></section>
+
+<section id="choix"><div class="wrap">
+  <div class="sec-head">
+    <span class="eyebrow">09 · Décisions transverses</span>
+    <h2>Ce qui a été choisi, et contre quoi</h2>
+  </div>
+  <div class="dec" id="dec"></div>
+</div></section>
+
+<section id="attention"><div class="wrap">
+  <div class="sec-head">
+    <span class="eyebrow">10 · Revue</span>
+    <h2>À surveiller</h2>
+    <p>Relevé en relisant le code et le brochage Waveshare. Aucun de ces points n'a été observé sur la carte : ce sont des limites connues ou des risques, classés par gravité.</p>
+  </div>
+  <div class="watchlist" id="watch"></div>
+</div></section>
+
+<footer><div class="wrap">Généré à partir de la branche du firmware 0.4.4 (<code>src/</code>, <code>include/</code>, <code>docs/protocole_ble.md</code>, <code>platformio.ini</code>). Les priorités des tâches système et la répartition de la RAM interne sont des valeurs typiques d'ESP-IDF 4.4, à confirmer avec l'écran Système de l'application.</div></footer>
+
+<script>
+(function(){
+"use strict";
+const $=s=>document.querySelector(s);
+const NS="http://www.w3.org/2000/svg";
+function el(tag,attrs,parent){const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);if(parent)parent.appendChild(e);return e}
+function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
+
+/* ═════════════ 1. CARTE ═════════════ */
+const W=170,H=40,A=20,B=215,C=420,D=680,E=885,F=1100;
+const N={
+ phone:{x:A,y:40,t:"Téléphone Android",s:"appli Kotlin, client GATT",k:"hw"},
+ flash:{x:A,y:130,t:"Flash 16 Mo",s:"app0 / app1 / otadata",k:"hw"},
+ modemhw:{x:A,y:370,t:"Modem A7670E",s:"LTE Cat-1 · GNSS · audio",k:"hw"},
+ spk:{x:A,y:530,t:"Haut-parleur SPK",s:"câblé sur le modem",k:"hw"},
+ bluedroid:{x:B,y:40,w:375,h:36,t:"Pile Bluedroid (BTC, BTU, contrôleur)",s:"tâches système · cœur 0 · prio 19 à 23",k:"sys"},
+ maj:{x:B,y:130,t:"Mise a jour",s:"P3 · 4 Ko",k:"c0"},
+ appli:{x:C,y:130,t:"Appli BLE",s:"P1 · 8 Ko",k:"c0"},
+ modem:{x:B,y:350,w:115,h:80,t:"Modem",s:"P3 · 6 Ko · UART",k:"c0"},
+ gps:{x:C,y:230,t:"GPS",s:"P1 · 5 Ko · 1 s",k:"c0"},
+ reseau:{x:C,y:290,t:"Reseau 4G",s:"P1 · 6 Ko · 10 s",k:"c0"},
+ horloge:{x:C,y:350,t:"Horloge",s:"P1 · 3 Ko · 1 min",k:"c0"},
+ sms:{x:C,y:410,t:"SMS",s:"P2 · 6 Ko",k:"c0"},
+ appels:{x:C,y:470,t:"Appels",s:"P2 · 4 Ko",k:"c0"},
+ hp:{x:C,y:530,t:"Haut-parleur",s:"P2 · 4 Ko",k:"c0"},
+ reception:{x:D,y:50,t:"Reception",s:"P2 · 6 Ko",k:"c1"},
+ journal:{x:D,y:130,t:"Journal",s:"P1 · 4 Ko",k:"c1"},
+ fichiers:{x:D,y:200,t:"Fichiers",s:"P1 · 6 Ko",k:"c1"},
+ alertes:{x:D,y:270,t:"Alertes",s:"P1 · 4 Ko · 5 s",k:"c1"},
+ camera:{x:D,y:350,t:"Camera",s:"P2 · 6 Ko",k:"c1"},
+ batterie:{x:D,y:420,t:"Batterie",s:"P1 · 3 Ko · 5 s",k:"c1"},
+ neopixels:{x:D,y:490,t:"NeoPixels",s:"P1 · 3 Ko · 50 img/s",k:"c1"},
+ bouton:{x:D,y:560,t:"Bouton",s:"P2 · 3 Ko · ISR",k:"c1"},
+ systeme:{x:E,y:50,t:"Systeme",s:"P1 · 3 Ko · 30 s",k:"c1"},
+ carteSD:{x:E,y:270,t:"Carte SD",s:"P1 · 4 Ko · verrou",k:"c1"},
+ sdhw:{x:F,y:270,t:"Lecteur micro-SD",s:"SDMMC 1 bit",k:"hw"},
+ camhw:{x:F,y:350,t:"Caméra OV2640/5640",s:"DVP 8 bits",k:"hw"},
+ max:{x:F,y:420,t:"Jauge MAX17048",s:"I2C 0x36",k:"hw"},
+ ws:{x:F,y:490,t:"Bande 14 × WS2812B",s:"GPIO 2",k:"hw"},
+ btnhw:{x:F,y:560,t:"Bouton GPIO 21",s:"vers GND, pull-up",k:"hw"},
+};
+for(const id in N){N[id].w=N[id].w||W;N[id].h=N[id].h||H;N[id].id=id}
+
+const EDGES=[
+ ["phone","bluedroid","hw","GATT chiffré SC+MITM, MTU 517",1],
+ ["bluedroid","appli","queue","onWrite Commande → fileDesCommandes (8 × 512 o)",0,-14],
+ ["appli","bluedroid","mutex","notify() sous verrouDesNotifications + 8 ms",0,14],
+ ["bluedroid","maj","queue","onWrite OTA → fileDeLaMiseAJour (8 × 520 o, ≤ 3 s)"],
+ ["bluedroid","reception","queue","onWrite Fichier entrant → fileDesMorceaux (48, PSRAM)"],
+ ["maj","flash","hw","Update.write → partition OTA inactive"],
+ ["appli","fichiers","queue","fileDesDemandes (4) · DL_ACK = xTaskNotifyGive"],
+ ["appli","camera","notify","PHOTO → xTaskNotifyGive"],
+ ["journal","appli","queue","fileDuJournal (20), si connecté et LOGS ON"],
+ ["modem","modemhw","hw","UART1 115200, GPIO 17/18 (sens auto), RX 4 Ko",1],
+ ["modemhw","spk","hw","audio analogique"],
+ ["gps","modem","mutex","AT+CGNSSINFO chaque seconde"],
+ ["reseau","modem","mutex","CPIN, CSQ, CEREG, COPS, CPSI, CGPADDR, CBC"],
+ ["horloge","modem","mutex","AT+CCLK? (CTZU=1)"],
+ ["sms","modem","mutex","CMGS / CMGR / CMGL, verrou ≤ 30 s",0,-8],
+ ["modem","sms","urc","URC +CMTI → fileDuModuleSMS",0,8],
+ ["appels","modem","mutex","ATD, ATA, AT+CHUP, AT+CLCC",0,-8],
+ ["modem","appels","urc","URC RING, +CLIP, NO CARRIER… → fileDesAppels",0,8],
+ ["hp","modem","mutex","CTTS, CCMXPLAY, SIMTONE, CFTRANRX",0,0,0.8],
+ ["gps","horloge","call","mettreLHorlogeALHeure(GPS) toutes les 10 min"],
+ ["alertes","sms","queue","demanderLEnvoiDUnSMS() → fileDuModuleSMS"],
+ ["alertes","gps","call","positionGPS() : copie sous verrou"],
+ ["sms","hp","queue","son du nouveau SMS → fileDesSons"],
+ ["appels","hp","queue","début / fin de sonnerie → fileDesSons"],
+ ["neopixels","hp","queue","annonce du nom de l'animation"],
+ ["bouton","neopixels","call","animation suivante / marche-arrêt"],
+ ["btnhw","bouton","notify","ISR FALLING → vTaskNotifyGiveFromISR"],
+ ["neopixels","ws","hw","RMT 800 kHz, show() toutes les 20 ms"],
+ ["batterie","max","hw","Wire (I2C 0), 15/16 en V2, 3/2 en V1",1],
+ ["camera","camhw","hw","XCLK 20 MHz (LEDC), SCCB, DVP",1],
+ ["camera","carteSD","mutex","ecrireUnFichier(JPEG)"],
+ ["journal","carteSD","mutex","ajout par lots de 2 Ko ou toutes les 5 s"],
+ ["fichiers","carteSD","mutex","open/seek/read/close par morceau"],
+ ["reception","carteSD","mutex","écriture du .part par 8 Ko"],
+ ["carteSD","sdhw","hw","CLK 5, CMD 4, D0 6",1],
+];
+
+const INFO={
+phone:{file:"android/",chips:[["hw","externe"]],
+ role:"<p>Application Android (Kotlin, Jetpack Compose). Elle s'appaire avec le code PIN, demande un MTU de 517, s'abonne aux notifications puis envoie <code>HEURE &lt;s&gt;</code>. Elle affiche les messages JSON (champ <code>t</code>) et envoie des commandes texte <code>NOM arg1|arg2</code>.</p>",
+ why:"<p>Le téléphone est le seul écran du module. Tout le protocole est textuel (JSON + commandes lisibles) pour pouvoir le déboguer avec nRF Connect sans l'application.</p>",
+ watch:"<p>Android règle lui-même les paramètres de liaison et remet souvent un délai de supervision de 5 s après la connexion ou un <code>requestConnectionPriority</code>. Le module le rattrape (voir Appli BLE).</p>"},
+flash:{file:"platformio.ini · default_16MB.csv",chips:[["hw","QIO 80 MHz"]],
+ role:"<p>Flash externe de 16 Mo. Deux emplacements applicatifs de 6,25 Mo (<code>app0</code>, <code>app1</code>) et <code>otadata</code>, qui dit au chargeur lequel démarrer. Le firmware actuel pèse ≈ 1,1 Mo.</p>",
+ why:"<p>Deux emplacements sont la condition d'une mise à jour sûre : on écrit dans celui qui ne tourne pas, et <code>otadata</code> n'est basculé qu'après vérification du MD5. Une coupure en plein transfert ne change rien.</p>",
+ watch:"<p>Le chargeur d'Arduino est compilé sans <code>CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE</code> : un firmware qui démarre puis plante en boucle n'est pas annulé automatiquement (voir À surveiller).</p>"},
+modemhw:{file:"include/configuration.h",chips:[["hw","UART"],["hw","DIP 4G = ON"]],
+ role:"<p>SIMCom A7670E : LTE Cat-1, repli 2G, GNSS multi-constellation intégré, codec audio. Il s'allume via l'interrupteur DIP « 4G » ; la broche PWRKEY n'est pas documentée par Waveshare (<code>BROCHE_ALLUMAGE_MODEM = -1</code>).</p>",
+ why:"<p>Le GNSS passe par le modem plutôt que par un récepteur séparé : pas de second UART, pas d'antenne en plus, la carte le prévoit déjà.</p>",
+ watch:"<p>La variante « LNXY-UBL » n'a ni voix ni TTS. Le module le détecte avec <code>AT+CLVL?</code> au démarrage (<code>voixDisponible</code>).</p>"},
+spk:{file:"src/module_haut_parleur.cpp",chips:[["hw","sortie modem"]],
+ role:"<p>Les pastilles SPK de la carte sont reliées au modem, pas à l'ESP32 (FAQ Waveshare). Tout le son est donc produit par des commandes AT : synthèse <code>AT+CTTS</code>, lecture de fichier <code>AT+CCMXPLAY</code>, bip <code>AT+SIMTONE</code>.</p>",
+ why:"<p>C'est le câblage de la carte qui impose ce choix. Avantage : aucun I2S, aucun DMA audio côté ESP32, et le son de l'appelant arrive au même endroit.</p>"},
+bluedroid:{file:"src/module_appli.cpp · preparerLeBluetooth()",chips:[["sys","cœur 0"],["sys","BTC prio 19"],["sys","contrôleur prio 23"]],
+ role:"<p>Pile hôte Bluedroid d'ESP-IDF, utilisée par la bibliothèque <code>BLEDevice</code> d'Arduino. Tous les rappels (<code>onConnect</code>, <code>onWrite</code>, <code>onAuthenticationComplete</code>, le gestionnaire GAP <code>surveillerLaRadio</code>) s'exécutent dans la <b>tâche BTC</b>, sur le cœur 0, avec une pile de quelques Ko.</p>",
+ sync:["fileDesCommandes ← onWrite Commande","fileDeLaMiseAJour ← onWrite OTA (contrôle et données)","fileDesMorceaux ← onWrite Fichier entrant","variables volatile : telephoneConnecte, telephoneAuthentifie, delaiDeCoupure, signalDuTelephoneDbm…"],
+ why:"<p>Règle appliquée partout : <b>un rappel BTC copie et dépose, il n'agit pas</b>. Écrire en flash ou sur la carte SD depuis là bloquait la pile et faisait déborder sa pile (c'est ce qui faisait planter le module dans une version précédente).</p><p>Les grosses structures sont <code>static</code> ou allouées (<code>malloc</code> puis <code>free</code> après copie dans la file) pour ne pas consommer la pile BTC.</p>",
+ alt:"<ul><li><b>NimBLE</b> : 50 à 100 Ko de RAM en moins et une API plus propre ; écarté pour l'instant (décision du 5 novembre) afin de ne pas tout réécrire pendant la mise au point.</li><li><b>Bluetooth classique (SPP)</b> : impossible, l'ESP32-S3 n'a que le BLE.</li></ul>",
+ watch:"<p>Un <code>onWrite</code> OTA peut bloquer BTC jusqu'à 3 s (fichier entrant : 8 s) : c'est voulu (contre-pression), mais pendant ce temps aucun autre événement GATT n'est traité.</p>"},
+maj:{file:"src/module_mise_a_jour.cpp",chips:[["c0","cœur 0"],["c0","prio 3"],["c0","pile 4 Ko"]],
+ role:"<p>Reçoit <code>START &lt;taille&gt; &lt;md5&gt;</code>, les morceaux, puis <code>END</code>, et pilote la classe <code>Update</code> (API <code>esp_ota_*</code>). Vérifie : taille ≤ <code>getFreeSketchSpace()</code>, premier octet <code>0xE9</code> (en-tête d'image ESP32), pas de dépassement, puis MD5 dans <code>Update.end()</code>. Sert aussi de <b>minuteur de redémarrage</b> pour tout le firmware (<code>redemarrerDansQuelquesInstants()</code>).</p>",
+ sync:["fileDeLaMiseAJour : 8 × 520 o (type, taille, 516 octets)","attente 1 s pour un ordre, 3 s pour un morceau","enCours : volatile, lu par Appli BLE pour suspendre les envois"],
+ why:"<p>L'écriture en flash coupe le cache sur les deux cœurs et un effacement de secteur de 4 Ko prend des dizaines de ms. Hors de la pile BT, une écriture lente ne fait que remplir la file ; quand elle est pleine, BTC attend, le téléphone (écriture avec réponse) attend aussi. Le débit s'ajuste tout seul à la flash.</p><p>Priorité 3 pour vider la file aussitôt. Le redémarrage est différé (1,5 s) pour laisser partir la notification <code>OK END</code> et la ligne de journal.</p>",
+ alt:"<ul><li><b>Écrire dans onWrite</b> : plus simple, mais bloque la pile et cause des coupures.</li><li><b>Passer par la carte SD puis flasher</b> : double écriture, et la carte SD est optionnelle.</li><li><b>OTA HTTPS par la 4G</b> : possible plus tard, nécessite PPP ou la pile TCP du modem.</li><li><b>Wi-Fi</b> : retiré le 5 novembre (une seule radio, plus de RAM).</li></ul>",
+ watch:"<p>Pas de validation du nouveau firmware après démarrage (<code>esp_ota_mark_app_valid_cancel_rollback</code>) : voir À surveiller. Un <code>malloc</code>/<code>free</code> de 520 octets par morceau dans BTC : sans danger, un tampon statique serait plus sobre.</p>"},
+appli:{file:"src/module_appli.cpp · include/module_appli.h",chips:[["c0","cœur 0"],["c0","prio 1"],["c0","pile 8 Ko"]],
+ role:"<p>Boucle de 30 ms : exécute les commandes reçues (table de 39 entrées), surveille la liaison, envoie les états périodiques (GPS 1 s ; batterie, réseau, système 5 s ; carte, LED, SIM, appel 15 s), puis jusqu'à 5 lignes de journal. Tout s'arrête pendant une mise à jour ou une réception de fichier.</p>",
+ sync:["fileDesCommandes (8 × 512 o), lue sans attente","fileDuJournal (20 × 204 o)","verrouDesNotifications : mutex simple, un notify à la fois","lit les états des autres modules par copies sous verrou"],
+ why:"<p>Exécuter les commandes dans une tâche, et non dans le rappel, permet à une commande de bloquer (<code>SMS_LISTE</code> attend jusqu'à 15 s le modem) sans geler la radio.</p><p>Priorité 1 suffit : le temps réel du BLE est dans le contrôleur, un retard de 30 ms côté application est invisible. 8 Ko de pile parce que deux tampons <code>char[600]</code>, un <code>JsonDocument</code> et des <code>String</code> peuvent coexister.</p><p>Surveillance de liaison : le délai de supervision imposé par Android (souvent 5 s) est relevé à 20 s par <code>updateConnParams(12, 24, 0, 2000)</code>, au plus 2 fois, 15 s après l'authentification, 45 s entre deux demandes, jamais pendant un transfert.</p>",
+ alt:"<ul><li><b>Une caractéristique par donnée</b> (GPS, batterie…) : plus « BLE natif », mais des dizaines d'UUID à maintenir des deux côtés ; un JSON typé par <code>t</code> évolue sans toucher au GATT.</li><li><b>CBOR / protobuf</b> : 30 à 50 % plus compact, illisible au débogage ; le débit utile n'est pas le facteur limitant ici.</li></ul>",
+ watch:"<p>La table de commandes est parcourue linéairement avec comparaison de <code>String</code> : sans importance à 39 entrées. Les envois périodiques passent par le même verrou que les téléchargements : d'où la suspension pendant les transferts.</p>"},
+modem:{file:"src/module_modem.cpp · include/module_modem.h",chips:[["c0","cœur 0"],["c0","prio 3"],["c0","pile 6 Ko"]],
+ role:"<p>Seul module qui touche l'UART1. Trouve le modem (sens TX/RX essayé dans les deux sens, car non documenté), le règle (<code>ATE0</code>, <code>CMEE=2</code>, SMS texte en UCS2, <code>CNMI=2,1</code>, <code>CLIP=1</code>), lit son identité, lève <code>BIT_MODEM_PRET</code>, puis lit les URC toutes les 20 ms quand personne n'a le verrou.</p>",
+ sync:["verrouDuModem : mutex récursif","evenementsDuModem : groupe d'événements, BIT_MODEM_PRET","abonnements[20] : préfixe → rappel, remplis dans setup()","tampon RX 4096 o (setRxBufferSize avant begin)"],
+ why:"<p><b>Un propriétaire unique</b> parce qu'un protocole AT n'a pas d'identifiant de transaction : deux tâches qui écrivent en même temps mélangent les réponses. Le verrou donne une API synchrone simple (<code>envoyerCommandeAT()</code> rend directement la réponse) que chaque client utilise depuis sa propre tâche.</p><p><b>Récursif</b> pour qu'un client enchaîne plusieurs commandes indivisibles (<code>prendreLeModem()</code> … <code>rendreLeModem()</code>).</p><p><b>Groupe d'événements</b> plutôt qu'un sémaphore : sept tâches attendent le même fait, un bit levé une fois les libère toutes et reste levé pour celles qui arrivent plus tard.</p><p><b>Lecteur en <code>take(0)</code></b> : il ne bloque jamais un client ; si une commande est en cours, c'est elle qui distribuera les URC.</p>",
+ alt:"<ul><li><b>TinyGSM</b> : pensé pour une seule tâche, pas de gestion des URC entrelacées avec plusieurs clients concurrents, et peu de commandes A7670 spécifiques (CGNSSINFO, CTTS, CCMXPLAY).</li><li><b>Une file de requêtes servie par la tâche Modem</b> : élimine la contention, mais chaque client devient asynchrone (rappel ou attente de réponse) ; plus de code pour le même résultat ici.</li><li><b>Liaison USB</b> (ancien firmware, archives) : pile USB hôte CDC lourde ; l'UART suffit pour de l'AT et du SMS.</li><li><b>CMUX</b> (canaux virtuels) : la bonne solution pour ajouter des données PPP plus tard, inutile tant qu'on reste en AT.</li></ul>",
+ watch:"<p>Les rappels d'URC s'exécutent dans la tâche qui détient le verrou (souvent GPS ou Réseau, pas Modem). Ils ne doivent faire qu'un <code>xQueueSend(…, 0)</code> : un AT dans un rappel ne bloquerait pas (verrou récursif) mais réentrerait dans <code>attendreLaReponse()</code> au milieu d'une autre réponse.</p>"},
+gps:{file:"src/module_gps.cpp",chips:[["c0","cœur 0"],["c0","prio 1"],["c0","pile 5 Ko"]],
+ role:"<p>Allume le GNSS (<code>AT+CGNSSPWR=1</code>), puis interroge <code>AT+CGNSSINFO</code> chaque seconde. Repère le champ <code>N</code>/<code>S</code> et lit tout le reste par rapport à lui, car le nombre de champs de satellites varie selon le logiciel du modem. Détecte le format des coordonnées (ddmm.mmmm ou degrés décimaux) au nombre de chiffres avant le point. Vitesse convertie des nœuds en km/h, vitesse maximale gardée.</p>",
+ sync:["verrouDeLaPosition : mutex, copie complète de PositionGPS","ulTaskNotifyTake(1 s) : minuterie que la commande GPS peut écourter"],
+ why:"<p><b>Sondage à la demande</b> plutôt que flux NMEA : le flux NMEA du modem (<code>AT+CGNSSTST</code>) inonderait l'UART partagé de phrases à parser, au détriment des SMS et appels. Une ligne par seconde suffit à 1 Hz de mise à jour.</p><p><b>ulTaskNotifyTake comme minuterie</b> : la commande <code>GPS</code> de l'application fait <code>xTaskNotifyGive</code> et coupe l'attente, sans sémaphore en plus.</p><p>Le GPS règle l'horloge (au plus toutes les 10 min) : c'est la source la plus juste.</p>",
+ alt:"<ul><li>Récepteur GNSS séparé sur un second UART : meilleure cadence (10 Hz), mais matériel et broches en plus.</li></ul>",
+ watch:"<p>Pendant un envoi de SMS (verrou tenu jusqu'à 30 s), <code>envoyerCommandeAT</code> du GPS expire et la position reste figée : son <code>age</code> le montre dans l'application.</p>"},
+reseau:{file:"src/module_reseau_4g.cpp",chips:[["c0","cœur 0"],["c0","prio 1"],["c0","pile 6 Ko"]],
+ role:"<p>Toutes les 10 s : état SIM (<code>CPIN</code>, puis une seule fois ICCID, IMSI, numéro), signal (<code>CSQ</code> → dBm = −113 + 2·csq), inscription (<code>CEREG</code>, repli <code>CREG</code> en 2G), opérateur (<code>COPS</code>), cellule LTE (<code>CPSI</code> : bande, EARFCN, RSRP, RSRQ, SNR), IP (<code>CGPADDR</code>), APN, tension vue par le modem (<code>CBC</code>, deux formats).</p>",
+ sync:["verrouDeLEtat : mutex, copie d'EtatDuReseau4G","ulTaskNotifyTake(10 s) : commande RESEAU l'écourte"],
+ why:"<p>Le sondage donne un état complet et cohérent à chaque passe, avec un seul endroit qui écrit. Les champs fixes (ICCID, IMSI) ne sont lus qu'une fois pour libérer l'UART.</p>",
+ alt:"<ul><li>URC <code>+CEREG=2</code> : réaction immédiate aux changements d'inscription, mais il faudrait quand même sonder le signal ; gain faible.</li></ul>",
+ watch:"<p>La structure contient des <code>String</code> : chaque copie sous verrou alloue sur le tas. Négligeable à cette cadence.</p>"},
+horloge:{file:"src/module_horloge.cpp",chips:[["c0","cœur 0"],["c0","prio 1"],["c0","pile 3 Ko"]],
+ role:"<p>Active <code>AT+CTZU=1</code>, lit <code>AT+CCLK?</code> (heure locale avec fuseau en quarts d'heure) toutes les 30 s tant que l'heure est inconnue, puis toutes les heures. Règle l'heure système par <code>settimeofday</code>, fuseau POSIX <code>CET-1CEST,M3.5.0,M10.5.0/3</code>.</p>",
+ sync:["sourceActuelle : volatile (AUCUNE, RESEAU_4G, GPS, TELEPHONE)"],
+ why:"<p><b>Hiérarchie des sources</b> : GPS, puis réseau, puis téléphone. Le réseau n'écrase jamais le GPS, le téléphone n'écrase ni l'un ni l'autre. Les dates avant 2023 et les années 70/80 (horloge du modem non réglée) sont rejetées.</p><p>Conversion date → secondes par l'algorithme de Howard Hinnant : indépendante de <code>TZ</code>, là où <code>mktime</code> interpréterait la date en heure locale.</p>",
+ alt:"<ul><li>SNTP : demande une connexion IP, absente pour l'instant.</li><li>RTC externe : inutile avec GPS et réseau.</li></ul>"},
+sms:{file:"src/module_sms.cpp",chips:[["c0","cœur 0"],["c0","prio 2"],["c0","pile 6 Ko"]],
+ role:"<p>Envoi : texte ASCII → jeu GSM, 160 caractères par SMS ; sinon UCS2, 70 caractères par SMS, sans couper une paire de substitution (émoji). Le verrou modem est tenu pour toute la séquence. Réception : URC <code>+CMTI</code> → <code>AT+CMGR</code> → journal, fichier <code>/sms/jj-mm-aaaa.txt</code>, son, événement <code>sms_recu</code>.</p>",
+ sync:["fileDuModuleSMS : 4 × 512 o (ENVOYER ou LIRE_UN_NOUVEAU_SMS)","rappel +CMTI : xQueueSend(…, 0)","prendreLeModem(30 s) pendant un envoi"],
+ why:"<p>Une seule file pour les deux travaux : les SMS sont traités dans l'ordre, et l'envoi (lent, jusqu'à 60 s par morceau) ne court jamais en même temps qu'une lecture. La demande (512 octets) est préparée par <code>calloc</code> chez l'appelant, et la tâche la reçoit dans une variable <code>static</code> : rien de gros sur les piles.</p><p>Priorité 2 : un SMS entrant passe avant les sondages GPS et réseau.</p>",
+ alt:"<ul><li>Mode PDU : permettrait les SMS concaténés (en-tête UDH) affichés comme un seul message ; le mode texte est bien plus simple à lire et à déboguer.</li></ul>",
+ watch:"<p>Un long texte part en plusieurs SMS indépendants (pas d'UDH) : le destinataire les voit séparés.</p>"},
+appels:{file:"src/module_appels.cpp",chips:[["c0","cœur 0"],["c0","prio 2"],["c0","pile 4 Ko"]],
+ role:"<p>Machine à états <code>AUCUN → SONNERIE / NUMEROTATION → EN_COMMUNICATION → AUCUN</code>. Toutes les URC (<code>RING</code>, <code>+CLIP</code>, <code>VOICE CALL:</code>, <code>NO CARRIER</code>, <code>BUSY</code>, <code>NO ANSWER</code>, <code>MISSED_CALL</code>) se ramènent à un seul message « le modem a signalé quelque chose », puis la tâche demande la vérité à <code>AT+CLCC</code>.</p>",
+ sync:["fileDesAppels : 6 × 25 o","verrouDeLAppel : mutex sur appelActuel et numeroDeLAppelant","délai de 2 s : sondage CLCC de sécurité pendant un appel"],
+ why:"<p><b>CLCC comme source de vérité</b> : le texte des URC varie selon le logiciel du modem ; interpréter chacune serait fragile. Une URC sert seulement de réveil.</p><p>Le sondage toutes les 2 s pendant un appel rattrape une URC perdue (par exemple pendant un débordement d'UART).</p>"},
+hp:{file:"src/module_haut_parleur.cpp",chips:[["c0","cœur 0"],["c0","prio 2"],["c0","pile 4 Ko"]],
+ role:"<p>Annonces (TTS), son de SMS, sonnerie toutes les 4 s, volume, sortie (<code>AT+CSDVC</code> 3 = haut-parleur, 1 = combiné), test. Chaque son a une cascade de repli : fichier dans le modem → synthèse → bip. Les sons de la carte SD sont copiés dans la mémoire du modem par <code>AT+CFTRANRX</code> (lu en entier en PSRAM, 400 Ko au plus).</p>",
+ sync:["fileDesSons : 8 × 128 o","attente 200 ms quand la sonnerie est active, sinon portMAX_DELAY"],
+ why:"<p>Le délai de réception variable sert de minuterie de sonnerie : zéro réveil quand rien ne sonne. Le volume et la sortie sont en NVS. <code>AT+CDTAM=0</code> évite que le son parte vers le correspondant d'un appel.</p>",
+ alt:"<ul><li>Messages en français enregistrés (WAV) plutôt que TTS : la synthèse du modem ne parle qu'anglais ou chinois ; c'est prévu via <code>/sons/</code>.</li></ul>"},
+reception:{file:"src/module_explorateur_fichiers.cpp",chips:[["c1","cœur 1"],["c1","prio 2"],["c1","pile 6 Ko"]],
+ role:"<p>Écrit sur la carte SD les morceaux envoyés par le téléphone. Tampon de 8 Ko (<code>malloc</code>), fichier <code>.part</code> ouvert pendant tout l'envoi, CRC32 au fil de l'eau, première erreur signalée tout de suite à l'application pour qu'elle arrête. À la fin : taille, CRC, suppression de l'ancien, renommage.</p>",
+ sync:["fileDesMorceaux : 48 × 522 o en PSRAM (xQueueCreateStatic)","verrouDeLaReception : mutex sur la structure de réception","morceauxEnAttente : compteur sous portMUX (section critique)"],
+ why:"<p>Une file de 48 morceaux (≈ 25 Ko) absorbe une carte SD lente (une écriture de 8 Ko peut prendre 100 ms et plus). En PSRAM pour laisser la RAM interne au Bluetooth.</p><p>Le compteur en section critique (<code>portENTER_CRITICAL</code>) plutôt qu'un mutex : il est touché depuis BTC (cœur 0) et la tâche (cœur 1), une incrémentation ne justifie pas un objet noyau.</p><p>Priorité 2, au-dessus de Fichiers et Journal qui partagent la carte : la file doit se vider avant que BTC n'attende 8 s.</p>",
+ alt:"<ul><li>Écrire chaque morceau de 509 octets directement : trop d'accès SD, verrou pris 20 fois par seconde.</li><li>Tout recevoir en PSRAM puis écrire : limite la taille du fichier à la PSRAM libre.</li></ul>"},
+journal:{file:"src/module_journal.cpp",chips:[["c1","cœur 1"],["c1","prio 1"],["c1","pile 4 Ko"]],
+ role:"<p><code>ecrireDansLeJournal(fmt, …)</code> formate sur la pile de l'appelant (192 octets) et dépose sans attendre. La tâche horodate, écrit sur le port série, transmet à l'application et accumule pour la carte SD : écriture quand le tampon atteint 2 Ko ou toutes les 5 s, un fichier par jour <code>/journaux/jj-mm-aaaa.log</code>.</p>",
+ sync:["fileDesLignes : 40 × 192 o, créée en tout premier dans setup()","xQueueSend(…, 0) : jamais bloquant, repli sur Serial si pleine"],
+ why:"<p>Un <code>printf</code> utilisable depuis n'importe quelle tâche ou rappel, sans jamais bloquer l'appelant sur la carte SD ou le BLE. Le regroupement limite l'usure de la carte et le temps de verrou SD.</p><p>Sans carte SD, le tampon est vidé au-delà de 8 Ko pour ne pas grossir sans fin.</p>",
+ alt:"<ul><li><code>esp_log</code> avec <code>esp_log_set_vprintf</code> : récupère aussi les logs d'ESP-IDF, mais s'exécute dans le contexte de l'appelant (y compris pendant des sections critiques) ; risqué pour écrire sur SD.</li></ul>",
+ watch:"<p>L'heure est ajoutée par la tâche Journal, pas à l'émission : quelques ms d'écart possible en rafale.</p>"},
+fichiers:{file:"src/module_explorateur_fichiers.cpp",chips:[["c1","cœur 1"],["c1","prio 1"],["c1","pile 6 Ko"]],
+ role:"<p>Lister (pages JSON de 380 octets au plus), renommer, déplacer, supprimer (récursif), créer un dossier, télécharger. Le téléchargement lit morceau par morceau (open, seek, read, close), notifie, calcule le CRC32 (même polynôme que <code>java.util.zip.CRC32</code>) et attend un <code>DL_ACK</code> tous les 8 morceaux.</p>",
+ sync:["fileDesDemandes : 4 × 404 o","octetsConfirmesParLeTelephone : volatile + xTaskNotifyGive","telechargementAnnule : volatile"],
+ why:"<p>Le fichier est rouvert à chaque morceau pour ne jamais garder le verrou SD pendant une attente radio : la caméra et le journal continuent d'écrire pendant un téléchargement de photo.</p><p>La notification de tâche sert de réveil pour le DL_ACK : l'attente boucle par pas de 100 ms jusqu'à 5 s, ce qui couvre aussi l'annulation et la déconnexion.</p>"},
+alertes:{file:"src/module_alertes_sms.cpp",chips:[["c1","cœur 1"],["c1","prio 1"],["c1","pile 4 Ko"]],
+ role:"<p>Au démarrage, attend le modem puis le réseau (3 min au plus) et envoie un SMS d'état (batterie, réseau, raison du redémarrage, position). Ensuite, toutes les 5 s : un SMS quand le GPS retrouve une position après plus de 5 min de perte, et un SMS à chaque déplacement de plus de 5 km (haversine) depuis la dernière position envoyée.</p>",
+ sync:["passe par demanderLEnvoiDUnSMS() : file du module SMS","lit positionGPS(), etatDeLaBatterie(), etatDuReseau4G() (copies)","NVS « alertes » : numéro, actives"],
+ why:"<p>Le seuil de 5 min évite un SMS à chaque pont ou tunnel. Le numéro n'est jamais dans le dépôt (public) : réglé par l'application ou <code>SECRET_NUMERO_ALERTES</code>, gardé en NVS.</p><p>Sur le cœur 1 : la tâche ne fait que lire des copies et déposer une demande, elle n'a pas besoin d'être près du modem.</p>"},
+camera:{file:"src/module_camera.cpp",chips:[["c1","cœur 1"],["c1","prio 2"],["c1","pile 6 Ko"]],
+ role:"<p>Initialise <code>esp_camera</code> dans sa propre tâche (quelques centaines de ms, sans retarder le <code>setup()</code>). JPEG UXGA qualité 10, deux tampons en PSRAM, <code>CAMERA_GRAB_LATEST</code>. Sur demande : jette la première image (périmée), prend la suivante, l'écrit dans <code>/photos/jj-mm-aaaa/…_ESP32-A7670.jpg</code>.</p>",
+ sync:["ulTaskNotifyTake(portMAX_DELAY) : une demande = une notification"],
+ why:"<p>Garde-fou matériel : si la bande NeoPixel est sur la broche HREF de la caméra (GPIO 41 en V2), la caméra est désactivée plutôt que de laisser deux pilotes se battre. En V2, le SCCB réutilise le port I2C 0 déjà ouvert par la jauge (mêmes fils 15/16).</p><p>Une notification de tâche suffit : plusieurs demandes rapprochées se fusionnent en une photo, ce qui est le comportement voulu.</p>",
+ watch:"<p>Toujours à essayer sur la carte V2 depuis que la bande a quitté le GPIO 41.</p>"},
+batterie:{file:"src/module_batterie.cpp",chips:[["c1","cœur 1"],["c1","prio 1"],["c1","pile 3 Ko"]],
+ role:"<p>Jauge MAX17048 (ModelGauge, sans résistance de mesure) : tension, pourcentage, variation en %/h, alertes. En déduit « en charge » (> 0,5 %/h), « pleine », l'autonomie et la source d'alimentation. Entrées analogiques 12 V et USB prévues mais non câblées (<code>-1</code>).</p>",
+ sync:["verrouDeLEtat : mutex, copie d'EtatDeLaBatterie"],
+ why:"<p>La carte ne permet pas de mesurer directement le 12 V ou l'USB : la source est déduite du sens de variation de la charge. Les broches de pont diviseur sont prêtes si on les câble.</p>"},
+neopixels:{file:"src/module_neopixels.cpp",chips:[["c1","cœur 1"],["c1","prio 1"],["c1","pile 3 Ko"]],
+ role:"<p>13 animations, 50 images par seconde. Chaque animation est une fonction du temps écoulé, appelée par un tableau de pointeurs de fonctions. « État des modules » allume un voyant fixe par module qui fonctionne (SD, modem, réseau, GPS, batterie, caméra, appli) et un éclair sinon.</p>",
+ sync:["animationEnCours, luminosite, bandeAllumee : volatile","NVS « neopixels »"],
+ why:"<p>Une animation fonction du temps n'a presque pas d'état : un retard d'image ne décale pas le rythme. Sur le cœur 1, le calcul et <code>show()</code> ne sont jamais retardés par la radio.</p><p>La bibliothèque Adafruit pilote les WS2812B par le périphérique RMT : la trame à 800 kHz est générée par le matériel, sans couper les interruptions.</p>",
+ alt:"<ul><li>FastLED : plus d'effets, mais historiquement plus capricieuse avec RMT sur ESP32-S3 et Arduino 2.x.</li></ul>"},
+bouton:{file:"src/module_bouton.cpp",chips:[["c1","cœur 1"],["c1","prio 2"],["c1","pile 3 Ko"]],
+ role:"<p>L'interruption sur front descendant ne fait que <code>vTaskNotifyGiveFromISR</code> + <code>portYIELD_FROM_ISR</code>. La tâche attend 40 ms (anti-rebond), mesure l'appui : court = animation suivante, long (1,5 s) = bande allumée ou éteinte, puis efface les notifications dues aux rebonds du relâchement.</p>",
+ sync:["notification de tâche depuis ISR (IRAM_ATTR)","attachInterrupt après la création de la tâche (poignée non nulle)"],
+ why:"<p>ISR minimale, logique dans une tâche où <code>vTaskDelay</code> est permis. Aucun réveil tant que personne n'appuie, contrairement à un sondage toutes les 10 ms.</p>",
+ alt:"<ul><li>Sondage par minuterie : simple, mais réveils permanents.</li><li>Anti-rebond matériel (RC) : inutile, le logiciel suffit.</li></ul>"},
+systeme:{file:"src/module_systeme.cpp",chips:[["c1","cœur 1"],["c1","prio 1"],["c1","pile 3 Ko"]],
+ role:"<p>Registre des tâches (24 au plus : nom, poignée, pile, priorité, cœur), créé par <code>creerTacheSurveillee()</code>. Toutes les 30 s, signale une tâche à moins de 512 octets de pile (<code>uxTaskGetStackHighWaterMark</code>) ou moins de 20 Ko de RAM interne libre. Compte les démarrages (NVS), traduit la raison du redémarrage, décrit processeur et mémoires pour l'application.</p>",
+ why:"<p>Le registre rend visibles dans l'application la pile restante de chaque tâche : on dimensionne les piles sur mesure au lieu de deviner.</p>"},
+carteSD:{file:"src/module_carte_sd.cpp",chips:[["c1","cœur 1"],["c1","prio 1"],["c1","pile 4 Ko"]],
+ role:"<p>Monte la carte en SDMMC 1 bit, puis la surveille toutes les 5 s (retrait et remise à chaud), recalcule l'espace utilisé une fois par minute. Toutes les opérations (ajout, écriture, renommage, suppression récursive, liste) prennent et rendent le verrou elles-mêmes.</p>",
+ sync:["verrouDeLaCarte : mutex récursif","carteMontee : volatile"],
+ why:"<p>FATFS est thread-safe par volume, mais pas une suite d'opérations (créer les dossiers parents, puis ouvrir, puis écrire). Le verrou est récursif car les opérations composées (renommer après suppression, recevoir un fichier) appellent les opérations simples.</p><p>Premier montage fait dans <code>setup()</code>, avant le journal, pour que les lignes du démarrage soient enregistrées.</p><p>SDMMC plutôt que SPI : périphérique dédié avec DMA, plus rapide et sans partager un bus SPI.</p>",
+ watch:"<p><code>usedBytes()</code> parcourt la FAT : quelques centaines de ms sur une grande carte, sous verrou. D'où la cadence d'une minute.</p>"},
+sdhw:{file:"include/configuration.h",chips:[["hw","SDMMC"]],role:"<p>Lecteur micro-SD câblé en 1 bit : CLK GPIO 5, CMD GPIO 4, D0 GPIO 6. Monté sur <code>/sdcard</code>.</p>"},
+camhw:{file:"include/module_carte.h",chips:[["hw","DVP"]],role:"<p>Connecteur 24 broches, OV2640 ou OV5640. D0 à D7 sur GPIO 7 à 14. XCLK, VSYNC, HREF, PCLK : 34/36/35/37 en V1, 39/42/41/46 en V2. Alimentée par le DIP « CAM ».</p>"},
+max:{file:"src/module_carte.cpp",chips:[["hw","I2C 0x36"]],role:"<p>Jauge MAX17048 sur la cellule 18650. Sa présence sur 15/16 ou 3/2 sert aussi à reconnaître la version de la carte (V2 ou V1), avec la taille de la PSRAM en dernier recours.</p>"},
+ws:{file:"include/configuration.h",chips:[["hw","GPIO 2"]],role:"<p>14 LED WS2812B (GRB, 800 kHz) sur le GPIO 2 depuis la 0.4.4 (broche 16 du connecteur 2). Historique : GPIO 41 (HREF de la caméra V2), puis GPIO 40, qui s'est révélé être la sortie RI du modem d'après le brochage Waveshare.</p>",watch:"<p>Sur une carte V1, le GPIO 2 est l'horloge I2C de la jauge : le firmware détecte ce cas et n'allume pas la bande.</p>"},
+btnhw:{file:"include/configuration.h",chips:[["hw","GPIO 21"]],role:"<p>Bouton entre GPIO 21 et la masse, résistance de tirage interne activée (<code>INPUT_PULLUP</code>).</p>"},
+};
+
+const svg=$("#mapsvg");
+const defs=el("defs",{},svg);
+const KC={queue:"var(--k-queue)",mutex:"var(--k-mutex)",notify:"var(--k-notify)",urc:"var(--k-urc)",hw:"var(--k-hw)",call:"var(--k-call)"};
+for(const k in KC){
+  const m=el("marker",{id:"ar-"+k,viewBox:"0 0 10 10",refX:"9",refY:"5",markerWidth:"7",markerHeight:"7",orient:"auto-start-reverse"},defs);
+  el("path",{d:"M0,0 L10,5 L0,10 z",fill:KC[k]},m);
+}
+// Bandes des cœurs et colonnes externes
+const bands=el("g",{},svg);
+el("rect",{x:200,y:8,width:410,height:614,rx:8,fill:"var(--c0t)",stroke:"var(--c0)","stroke-opacity":".35"},bands);
+el("rect",{x:665,y:8,width:410,height:614,rx:8,fill:"var(--c1t)",stroke:"var(--c1)","stroke-opacity":".35"},bands);
+[[405,"CŒUR 0 · COMMUNICATIONS","var(--c0)"],[870,"CŒUR 1 · TRAITEMENTS","var(--c1)"],[105,"MATÉRIEL","var(--hw)"],[1185,"MATÉRIEL","var(--hw)"]].forEach(([x,t,c])=>{
+  const tx=el("text",{x:x,y:26,"text-anchor":"middle",fill:c,"font-family":"var(--f-mono)","font-size":"11","letter-spacing":"1.5"},bands);tx.textContent=t;
+});
+const gEdges=el("g",{fill:"none"},svg);
+const gLabels=el("g",{},svg);
+const gNodes=el("g",{},svg);
+
+function anchor(a,b,off){
+  off=off||0;
+  const acx=a.x+a.w/2,acy=a.y+a.h/2,bcx=b.x+b.w/2,bcy=b.y+b.h/2;
+  const clamp=(v,lo,hi)=>Math.max(lo+12,Math.min(hi-12,v));
+  if(b.x>=a.x+a.w-1){const x1=a.x+a.w,y1=acy+off,x2=b.x,y2=bcy+off,dx=Math.max(30,(x2-x1)/2);return {d:`M${x1},${y1} C${x1+dx},${y1} ${x2-dx},${y2} ${x2},${y2}`,mx:(x1+x2)/2,my:(y1+y2)/2};}
+  if(b.x+b.w<=a.x+1){const x1=a.x,y1=acy+off,x2=b.x+b.w,y2=bcy+off,dx=Math.max(30,(x1-x2)/2);return {d:`M${x1},${y1} C${x1-dx},${y1} ${x2+dx},${y2} ${x2},${y2}`,mx:(x1+x2)/2,my:(y1+y2)/2};}
+  // colonnes qui se chevauchent
+  const adjacent=Math.abs(b.y-(a.y+a.h))<45||Math.abs(a.y-(b.y+b.h))<45;
+  if(adjacent||a.w>W||b.w>W){
+    const x1=clamp((a.w>W?bcx:acx)+off,a.x,a.x+a.w),x2=clamp((b.w>W?acx:bcx)+off,b.x,b.x+b.w);
+    const down=b.y>a.y;const y1=down?a.y+a.h:a.y,y2=down?b.y:b.y+b.h;
+    return {d:`M${x1},${y1} C${x1},${(y1+y2)/2} ${x2},${(y1+y2)/2} ${x2},${y2}`,mx:(x1+x2)/2,my:(y1+y2)/2};
+  }
+  const x1=a.x+a.w,y1=acy,x2=b.x+b.w,y2=bcy,bx=Math.max(x1,x2)+34+Math.abs(y2-y1)*0.06;
+  return {d:`M${x1},${y1} C${bx},${y1} ${bx},${y2} ${x2},${y2}`,mx:bx-8,my:(y1+y2)/2};
+}
+
+const edgeEls=[];
+EDGES.forEach((e,i)=>{
+  const [f,t,k,label,bi,off,pos]=e;const a=N[f],b=N[t];
+  const p=anchor(a,b,off);
+  const path=el("path",{d:p.d,stroke:KC[k],"stroke-width":"1.6","marker-end":`url(#ar-${k})`,class:"edge"},gEdges);
+  if(bi)path.setAttribute("marker-start",`url(#ar-${k})`);
+  if(k==="urc")path.setAttribute("stroke-dasharray","5 4");
+  if(k==="call")path.setAttribute("stroke-dasharray","2 3");
+  const len=path.getTotalLength(),pt=path.getPointAtLength(len*(pos||(off<0?0.33:off>0?0.67:0.5)));
+  const lb=el("g",{class:"badge"},gLabels);el("circle",{cx:pt.x,cy:pt.y,r:8.5,fill:KC[k]},lb);
+  const bt=el("text",{x:pt.x,y:pt.y+3.5,"text-anchor":"middle"},lb);
+  lb.style.display="none";
+  edgeEls.push({f,t,path,lb,bt,label});
+});
+
+const fillOf={c0:"var(--panel)",c1:"var(--panel)",hw:"var(--hwt)",sys:"var(--syst)"};
+const strokeOf={c0:"var(--c0)",c1:"var(--c1)",hw:"var(--hw)",sys:"var(--sys)"};
+const nodeEls={};
+for(const id in N){
+  const n=N[id];
+  const g=el("g",{class:"node",tabindex:"0",role:"button","aria-label":n.t+" : "+n.s},gNodes);
+  const r=el("rect",{class:"box",x:n.x,y:n.y,width:n.w,height:n.h,rx:5,fill:fillOf[n.k],stroke:strokeOf[n.k],"stroke-width":"1.5"},g);
+  if(n.k==="hw")r.setAttribute("stroke-dasharray","4 3");
+  const cy=n.y+n.h/2;
+  const t1=el("text",{x:n.x+10,y:cy-3,fill:"var(--ink)","font-family":"var(--f-body)","font-size":"13","font-weight":"600"},g);t1.textContent=n.t;
+  const t2=el("text",{x:n.x+10,y:cy+12,fill:"var(--muted)","font-family":"var(--f-mono)","font-size":"10.5"},g);t2.textContent=n.s;
+  if(n.k==="c0"||n.k==="c1"){el("rect",{x:n.x,y:n.y,width:4,height:n.h,fill:strokeOf[n.k]},g)}
+  g.addEventListener("click",()=>select(id));
+  g.addEventListener("keydown",ev=>{if(ev.key==="Enter"||ev.key===" "){ev.preventDefault();select(id)}});
+  nodeEls[id]={g,r};
+}
+
+const panel=$("#panel");
+function select(id){
+  const linked=new Set([id]);
+  let num=0;
+  edgeEls.forEach(e=>{
+    const on=e.f===id||e.t===id;
+    if(on){e.num=++num;e.bt.textContent=num}
+    if(on){linked.add(e.f);linked.add(e.t)}
+    e.path.classList.toggle("dim",!on);e.path.setAttribute("stroke-width",on?"2.4":"1.6");
+    e.lb.style.display=on?"":"none";
+  });
+  for(const k in nodeEls){nodeEls[k].g.classList.toggle("dim",!linked.has(k));nodeEls[k].r.setAttribute("stroke-width",k===id?"3":"1.5")}
+  const n=N[id],inf=INFO[id]||{};
+  const chips=(inf.chips||[]).map(c=>`<span class="chip ${c[0]}">${esc(c[1])}</span>`).join("");
+  const links=edgeEls.filter(e=>e.f===id||e.t===id).map(e=>`<li><span class="chip" style="color:#fff;background:${KC[EDGES[edgeEls.indexOf(e)][2]]};border-color:transparent">${e.num}</span> <b>${esc(N[e.f].t)}</b> → <b>${esc(N[e.t].t)}</b> : ${esc(e.label)}</li>`).join("");
+  panel.innerHTML=`<div class="ph"><span class="eyebrow">${n.k==="hw"?"Matériel":n.k==="sys"?"Système ESP-IDF":"Tâche FreeRTOS"}</span><h3>${esc(n.t)}</h3><div class="chips">${chips}</div><div class="file">${esc(inf.file||"")}</div></div>
+  <div class="pb">
+   ${inf.role?`<div class="blk"><h4>Rôle</h4>${inf.role}</div>`:""}
+   ${inf.sync?`<div class="blk"><h4>Primitives</h4><ul>${inf.sync.map(s=>`<li><code>${esc(s.split(" ")[0])}</code> ${esc(s.split(" ").slice(1).join(" "))}</li>`).join("")}</ul></div>`:""}
+   ${links?`<div class="blk"><h4>Liens sur la carte</h4><ul style="list-style:none;padding-left:0">${links}</ul></div>`:""}
+   ${inf.why?`<div class="blk why"><h4>Pourquoi ce choix</h4>${inf.why}</div>`:""}
+   ${inf.alt?`<div class="blk alt"><h4>Écarté</h4>${inf.alt}</div>`:""}
+   ${inf.watch?`<div class="blk watch"><h4>À surveiller</h4>${inf.watch}</div>`:""}
+  </div>`;
+}
+select("modem");
+
+/* ═════════════ 2. TÂCHES ═════════════ */
+const TASKS=[
+ ["Modem","modem",0,3,6144,"lireUneLigne / vTaskDelay(20 ms)"],
+ ["Mise a jour","mise_a_jour",0,3,4096,"xQueueReceive(200 ms)"],
+ ["SMS","sms",0,2,6144,"xQueueReceive(portMAX_DELAY)"],
+ ["Appels","appels",0,2,4096,"xQueueReceive(2 s)"],
+ ["Haut-parleur","haut_parleur",0,2,4096,"xQueueReceive(200 ms ou ∞)"],
+ ["GPS","gps",0,1,5120,"ulTaskNotifyTake(1 s)"],
+ ["Reseau 4G","reseau_4g",0,1,6144,"ulTaskNotifyTake(10 s)"],
+ ["Horloge","horloge",0,1,3072,"vTaskDelay(30 s / 1 h)"],
+ ["Appli BLE","appli",0,1,8192,"vTaskDelay(30 ms)"],
+ ["Reception","explorateur_fichiers",1,2,6144,"xQueueReceive(200 ms)"],
+ ["Bouton","bouton",1,2,3072,"ulTaskNotifyTake(∞) ← ISR"],
+ ["Camera","camera",1,2,6144,"ulTaskNotifyTake(∞)"],
+ ["Journal","journal",1,1,4096,"xQueueReceive(1 s)"],
+ ["Carte SD","carte_sd",1,1,4096,"vTaskDelay(5 s)"],
+ ["Systeme","systeme",1,1,3072,"vTaskDelay(30 s)"],
+ ["Batterie","batterie",1,1,3072,"vTaskDelay(5 s)"],
+ ["NeoPixels","neopixels",1,1,3072,"vTaskDelay(20 ms)"],
+ ["Fichiers","explorateur_fichiers",1,1,6144,"xQueueReceive(∞)"],
+ ["Alertes","alertes_sms",1,1,4096,"vTaskDelay(5 s)"],
+ ["ipc0 / ipc1","ESP-IDF","sys",24,1024,"appels inter-cœurs (esp_ipc)"],
+ ["BT controller","ESP-IDF","sys",23,"≈ 3584","contrôleur BLE (lien radio)"],
+ ["esp_timer","ESP-IDF","sys",22,"≈ 3584","minuteurs haute résolution"],
+ ["hciT / BTU","ESP-IDF","sys",21,"≈ 4096","couche HCI et cœur de Bluedroid"],
+ ["BTC","ESP-IDF","sys",19,"≈ 3072","rappels GATT/GAP → nos onWrite"],
+ ["loopTask","Arduino","sys",1,8192,"exécute setup(), puis se supprime"],
+ ["IDLE0 / IDLE1","FreeRTOS","sys",0,"≈ 1536","libère la mémoire des tâches supprimées"],
+];
+const tb=$("#tasktbl tbody");
+function drawTasks(filter){
+  tb.innerHTML="";
+  TASKS.filter(t=>filter==="all"||String(t[2])===filter).forEach(t=>{
+    const [nom,mod,c,p,pile,att]=t;const n=typeof pile==="number"?pile:parseInt(String(pile).replace(/\D/g,""),10);
+    const cls=c==="sys"?"sys":c===1?"c1":"";
+    const tr=document.createElement("tr");
+    const nodeId={Modem:"modem","Mise a jour":"maj",SMS:"sms",Appels:"appels","Haut-parleur":"hp",GPS:"gps","Reseau 4G":"reseau",Horloge:"horloge","Appli BLE":"appli",Reception:"reception",Bouton:"bouton",Camera:"camera",Journal:"journal","Carte SD":"carteSD",Systeme:"systeme",Batterie:"batterie",NeoPixels:"neopixels",Fichiers:"fichiers",Alertes:"alertes",BTC:"bluedroid"}[nom];
+    if(nodeId){tr.className="click";tr.tabIndex=0;tr.addEventListener("click",()=>{select(nodeId);location.hash="carte"})}
+    tr.innerHTML=`<td><b>${esc(nom)}</b></td><td class="mono muted">${esc(mod)}</td><td>${c==="sys"?'<span class="chip sys">'+(nom.startsWith("BT")||nom.startsWith("hci")||nom==="esp_timer"?"0":nom==="loopTask"?"1":"0 / 1")+'</span>':'<span class="chip '+(c?"c1":"c0")+'">'+c+'</span>'}</td><td class="num">${p}</td><td class="num">${typeof pile==="number"?(pile/1024).toFixed(pile%1024?1:0)+" Ko":esc(pile)+" o"}</td><td><span class="bar ${cls}" style="width:${Math.round(n/8192*100)}%"></span></td><td class="mono" style="font-size:12px">${esc(att)}</td>`;
+    tb.appendChild(tr);
+  });
+}
+drawTasks("all");
+document.querySelectorAll("button.f").forEach(b=>b.addEventListener("click",()=>{document.querySelectorAll("button.f").forEach(x=>x.setAttribute("aria-pressed",x===b?"true":"false"));drawTasks(b.dataset.f)}));
+
+// Échelle des priorités
+(function(){
+  const s=$("#priosvg");const top=34,bot=580,y=p=>bot-(p/25)*(bot-top);
+  for(let p=0;p<=24;p+=4){const yy=y(p);el("line",{x1:60,y1:yy,x2:770,y2:yy,stroke:"var(--line)"},s);const t=el("text",{x:48,y:yy+4,"text-anchor":"end",fill:"var(--muted)","font-family":"var(--f-mono)","font-size":"11"},s);t.textContent=p}
+  [[235,"CŒUR 0","var(--c0)"],[580,"CŒUR 1","var(--c1)"]].forEach(([x,t,c])=>{const e=el("text",{x:x,y:14,"text-anchor":"middle",fill:c,"font-family":"var(--f-mono)","font-size":"11","letter-spacing":"1.5"},s);e.textContent=t});
+  const items=[
+   [0,24,"ipc0","sys"],[1,24,"ipc1","sys"],[0,23,"BT controller","sys"],[0,22,"esp_timer","sys"],[0,21,"hciT / BTU 20","sys"],[0,19,"BTC (nos onWrite)","sys"],
+   [0,3,"Modem · Mise a jour","c0"],[0,2,"SMS · Appels · Haut-parleur","c0"],[0,1,"GPS · Réseau · Horloge · Appli BLE","c0"],
+   [1,2,"Reception · Bouton · Camera","c1"],[1,1,"Journal · SD · Système · Batterie · LED · Fichiers · Alertes","c1"],[0,0,"IDLE0","sys"],[1,0,"IDLE1","sys"]];
+  const col={sys:"var(--sys)",c0:"var(--c0)",c1:"var(--c1)"},tint={sys:"var(--syst)",c0:"var(--c0t)",c1:"var(--c1t)"};
+  items.forEach(([c,p,t,k])=>{
+    const x=c?415:70,w=340,yy=y(p)-9;
+    el("rect",{x:x,y:yy,width:w,height:18,rx:3,fill:tint[k],stroke:col[k]},s);
+    const tx=el("text",{x:x+8,y:yy+13,fill:"var(--ink)","font-family":"var(--f-body)","font-size":"11"},s);tx.textContent=t;
+  });
+  const br=el("text",{x:415,y:y(11),"text-anchor":"middle",fill:"var(--muted)","font-family":"var(--f-body)","font-size":"12","font-style":"italic"},s);br.textContent="16 niveaux d'écart avec la pile radio";
+})();
+
+/* ═════════════ 3. SYNCHRO ═════════════ */
+const SYNC=[
+ ["fileDesLignes","file","40 × 192 o","toutes les tâches et rappels","Journal","envoi 0 ms","Producteurs innombrables, consommateur unique, ordre conservé ; copie par valeur, aucun pointeur vers une pile qui disparaît."],
+ ["fileDesCommandes","file","8 × 512 o","BTC (onWrite Commande)","Appli BLE","envoi 0 ms","Sortir du contexte BTC. Pleine → réponse « Module occupé » plutôt que bloquer la radio."],
+ ["fileDuJournal","file","20 × 204 o","Journal","Appli BLE","envoi 0 ms","Découple le débit du journal de celui du BLE ; pleine → la ligne reste sur SD et série."],
+ ["fileDeLaMiseAJour","file","8 × 520 o","BTC (OTA contrôle et données)","Mise a jour","1 s / 3 s","Contre-pression volontaire sur la pile BLE : la flash dicte le débit."],
+ ["fileDesMorceaux","file statique PSRAM","48 × 522 o","BTC (Fichier entrant)","Reception","8 s","Absorber les latences de la carte SD sans RAM interne."],
+ ["fileDesDemandes","file","4 × 404 o","Appli BLE","Fichiers","envoi 0 ms","Opérations SD longues hors de la tâche Appli."],
+ ["fileDuModuleSMS","file","4 × 512 o","Appli, Alertes, rappel +CMTI","SMS","envoi 0 ms","Sérialiser envois et lectures ; ordre FIFO."],
+ ["fileDesAppels","file","6 × 25 o","Appli, rappels RING/CLIP/…","Appels","envoi 0 ms","Les rappels d'URC ne doivent pas faire d'AT."],
+ ["fileDesSons","file","8 × 128 o","Appels, SMS, NeoPixels, Appli","Haut-parleur","envoi 0 ms","Le son passe par le modem : il faut une tâche qui puisse attendre le verrou."],
+ ["verrouDuModem","mutex récursif","","tous les clients AT, lecteur d'URC","","take(délai+5 s) / take(0)","Propriété exclusive de l'UART ; récursif pour les séquences indivisibles."],
+ ["verrouDeLaCarte","mutex récursif","","Journal, Caméra, Fichiers, Reception, SMS, HP, Carte SD","","5 s par défaut","FATFS ne protège pas une suite d'opérations ; opérations composées réentrantes."],
+ ["verrouDesNotifications","mutex","","toute tâche qui notifie","","∞","Un seul setValue()+notify() à la fois sur la pile ; porte la pause de 8 ms."],
+ ["verrouDeLaReception","mutex","","Appli (début, fin, annulation), Reception","","∞","Protège la structure de réception partagée entre deux tâches et deux cœurs."],
+ ["verrouDeLaPosition / DeLEtat ×2 / DeLAppel","mutex ×4","","module propriétaire, lecteurs","","∞ (tenu quelques µs)","Copie de structure cohérente ; mutex (héritage de priorité) plutôt que section critique, car la copie de String alloue."],
+ ["evenementsDuModem","groupe d'événements","BIT0","Modem","7 tâches clientes","∞","Un fait durable « modem prêt » attendu par plusieurs tâches."],
+ ["notifications de tâche","xTaskNotifyGive","1 compteur par tâche","Appli, ISR bouton, Explorateur","GPS, Réseau, Caméra, Bouton, Fichiers","selon tâche","Le plus léger des réveils (pas d'objet noyau), fusionne les demandes répétées."],
+ ["verrouDuCompteur","portMUX (spinlock)","","BTC (cœur 0), Reception (cœur 1)","","section critique","Un entier modifié depuis deux cœurs : spinlock plus léger qu'un mutex."],
+];
+$("#synctbl tbody").innerHTML=SYNC.map(r=>`<tr><td><code>${esc(r[0])}</code></td><td>${esc(r[1])}</td><td class="num">${esc(r[2])}</td><td>${esc(r[3])}</td><td>${esc(r[4])}</td><td class="mono" style="font-size:12px">${esc(r[5])}</td><td style="min-width:260px">${esc(r[6])}</td></tr>`).join("");
+
+/* ═════════════ 4. SÉQUENCES ═════════════ */
+const SEQS={
+boot:{nom:"Démarrage",lanes:["loopTask (setup)","Journal","Carte SD","Modem","Clients modem","Appli BLE"],steps:[
+ [0,0,"Serial.begin · preparerLeJournal()","La file du journal est créée avant toute tâche : ecrireDansLeJournal() est utilisable tout de suite (repli sur Serial tant que la tâche n'existe pas).","main.cpp · setup()"],
+ [0,0,"preparerLHorloge() : TZ CET/CEST","setenv(\"TZ\") + tzset() avant tout horodatage.","module_horloge.cpp"],
+ [0,0,"detecterLaVersionDeLaCarte()","I2C 0x36 sur 15/16 → V2, sinon 3/2 → V1, sinon taille de PSRAM. Les broches de la jauge et de la caméra en dépendent, d'où la première place.","module_carte.cpp"],
+ [0,2,"demarrerModuleCarteSD()","Mutex récursif, premier montage synchrone (pour enregistrer le journal du démarrage), puis tâche de surveillance.","module_carte_sd.cpp"],
+ [0,1,"demarrerModuleJournal()","Tâche Journal : vide les lignes déjà en file, en-tête de version.",""],
+ [0,0,"Système, Batterie, NeoPixels, Bouton, Caméra","Le bouton crée sa tâche avant attachInterrupt() : l'ISR ne notifie jamais une poignée nulle. La caméra s'initialise dans sa tâche, sans retarder setup().",""],
+ [0,3,"demarrerModuleModem()","Mutex + groupe d'événements + tampon RX 4 Ko, tâche P3 sur le cœur 0. La recherche commence aussitôt, en parallèle du reste.","module_modem.cpp"],
+ [0,4,"Horloge, Réseau, GPS, SMS, Appels, HP, Alertes","Chaque module s'abonne à ses URC dans setup() (avant que le modem ne parle), puis sa tâche se bloque sur xEventGroupWaitBits(BIT_MODEM_PRET).",""],
+ [0,5,"Explorateur, Mise à jour, Appli BLE","BLEDevice::init, sécurité, 9 caractéristiques, annonce. Le BLE est en dernier : l'application ne voit le module que quand tout est en place.",""],
+ [0,0,"loop() : vTaskDelete(nullptr)","loopTask se supprime : ses 8 Ko de pile sont rendus par la tâche Idle.","main.cpp · loop()"],
+ [3,3,"AT sur 17/18 puis 18/17, réglages","ATE0, CMEE=2, CGMM/CGMR/CGSN, CLVL? (voix), CPIN? (20 s max), CMGF=1, CSCS=UCS2, CSMP, CNMI=2,1, CLIP=1.",""],
+ [3,4,"xEventGroupSetBits(BIT_MODEM_PRET)","Toutes les tâches clientes se réveillent en même temps et commencent leurs sondages ; l'heure réseau, le GNSS et le SMS de démarrage suivent.",""],
+]},
+at:{nom:"AT + URC entrelacée",lanes:["Tâche GPS","verrouDuModem","UART / A7670E","Tâche SMS"],steps:[
+ [0,1,"prendreLeModem(7000)","envoyerCommandeAT(\"AT+CGNSSINFO\", &rep, 2000) prend le mutex récursif (délai + 5 s).",""],
+ [0,2,"traiterLesLignesEnAttente()","Les URC arrivées depuis la dernière commande sont distribuées avant d'écrire, pour ne pas les lire comme réponse.",""],
+ [0,2,"« AT+CGNSSINFO\\r »","",""],
+ [2,0,"+CMTI: \"SM\",3","Un SMS arrive pendant la commande : le modem glisse l'URC au milieu.",""],
+ [0,3,"rappel quandUnSMSArrive()","attendreLaReponse() reconnaît le préfixe abonné : le rappel s'exécute DANS la tâche GPS et ne fait qu'un xQueueSend(fileDuModuleSMS, 0).","Le rappel ne doit jamais envoyer d'AT"],
+ [2,0,"+CGNSSINFO: 3,12,05,…","Ligne ajoutée à *reponse.",""],
+ [2,0,"OK","Fin de réponse : résultat OK.",""],
+ [0,1,"rendreLeModem()","",""],
+ [3,1,"prendreLeModem()","La tâche SMS (P2) se réveille sur sa file et prend le verrou à son tour.",""],
+ [3,2,"AT+CMGR=3","Lecture du SMS, décodage UCS2 → UTF-8, fichier SD, son, événement sms_recu.",""],
+]},
+ota:{nom:"Mise à jour BLE",lanes:["Appli Android","Bluedroid (BTC)","Mise a jour","Flash","Appli BLE"],steps:[
+ [0,1,"write 0006 « START 1153024 <md5> »","Écriture avec réponse sur OTA contrôle.",""],
+ [1,2,"mettreDansLaFile(ORDRE, 1 s)","Copie du texte (malloc), envoi dans la file, free. BTC est libre.",""],
+ [2,3,"Update.begin(taille) · setMD5()","Refus si taille > getFreeSketchSpace(). Choix de la partition inactive (app1 si on tourne sur app0).",""],
+ [2,0,"notify « OK START »","Via envoyerUneReponseDeMiseAJourALAppli().",""],
+ [4,4,"miseAJourEnCours() = true","La tâche Appli suspend GPS, états, journal ; la renégociation de liaison est suspendue aussi.",""],
+ [0,1,"write 0007 · morceau de 514 o","Écriture avec réponse : le téléphone attend l'accusé avant le suivant.",""],
+ [1,2,"xQueueSend(…, 3 s)","Si la flash est en retard, BTC attend ici : le téléphone ralentit tout seul.","contre-pression"],
+ [2,3,"Update.write()","Premier morceau : octet 0xE9 exigé. Dépassement de taille refusé. Effacement et écriture par secteurs de 4 Ko.",""],
+ [0,1,"write 0006 « END »","",""],
+ [2,3,"Update.end() : MD5 + otadata","Vérifie l'empreinte, puis esp_ota_set_boot_partition(). Avant cette ligne, rien n'a changé pour le démarrage.",""],
+ [2,0,"notify « OK END »","redemarrerDansQuelquesInstants(1500).",""],
+ [2,2,"ESP.restart()","La tâche Mise à jour vérifie l'échéance à chaque tour de 200 ms : la notification et le journal ont le temps de partir.",""],
+]},
+dl:{nom:"Téléchargement d'un fichier",lanes:["Appli Android","Bluedroid","Appli BLE","Fichiers","Carte SD"],steps:[
+ [0,1,"FICHIER_TELECHARGER /photos/…jpg","Écriture sur Commande.",""],
+ [1,2,"fileDesCommandes","",""],
+ [2,3,"demanderUneOperationSurLesFichiers()","Demande copiée dans fileDesDemandes ; la tâche Appli continue.",""],
+ [3,4,"lireLesInformationsDUnElement()","Taille et type, sous verrou.",""],
+ [3,0,"dl_debut {chemin, taille}","Sur Données.",""],
+ [3,4,"take · open · seek · read · close · give","Le verrou SD n'est tenu que le temps d'un morceau (MTU − 3).","un morceau à la fois"],
+ [3,0,"notify Fichier (binaire) × 8","CRC32 calculé au fil de l'eau.",""],
+ [0,2,"DL_ACK 4072","Le téléphone confirme les octets reçus.",""],
+ [2,3,"xTaskNotifyGive","confirmerLaReceptionDuTelephone() met à jour le compteur et réveille la tâche (attente par pas de 100 ms, 5 s max).",""],
+ [3,0,"dl_fin {ok, crc}","Le téléphone compare au CRC32 de java.util.zip.",""],
+]},
+up:{nom:"Envoi d'un fichier vers la SD",lanes:["Appli Android","Bluedroid","Appli BLE","Reception","Carte SD"],steps:[
+ [0,2,"FICHIER_ENVOYER /sons/sms.wav|48210","Vérifie la place (taille + 64 Ko), alloue le tampon de 8 Ko, crée le .part.",""],
+ [2,0,"rep {ok:true}","",""],
+ [0,1,"write 0009 · morceau ≤ 509 o","Écriture avec réponse.",""],
+ [1,3,"xQueueSend(fileDesMorceaux, 8 s)","Morceau copié dans une variable static (pas sur la pile BTC). Compteur sous portMUX.",""],
+ [3,3,"CRC32 + copie dans le tampon 8 Ko","Sous verrouDeLaReception.",""],
+ [3,4,"tampon plein → write()","4 essais, verrou SD 8 s ; erreur signalée aussitôt à l'appli.",""],
+ [0,2,"FICHIER_ENVOYER_FIN <crc32>","Attend que la file soit vide (30 s max).",""],
+ [2,4,"dernier write, close, remove, rename","Taille et CRC vérifiés avant de remplacer l'ancien fichier.",""],
+ [2,0,"rep {ok:true, msg:chemin}","",""],
+]},
+call:{nom:"Appel entrant",lanes:["A7670E","Lecteur URC","Appels","Haut-parleur","Appli BLE"],steps:[
+ [0,1,"RING","Lu par la tâche Modem (take(0)) ou par la commande en cours.",""],
+ [0,1,"+CLIP: \"0612…\",129","",""],
+ [1,2,"numeroDeLAppelant + LE_MODEM_A_SIGNALE","Le rappel range le numéro sous verrouDeLAppel et poste dans la file.",""],
+ [2,2,"changerDEtat(SONNERIE) · AT+CLCC","État confirmé par CLCC (état 4 = sonne).",""],
+ [2,3,"demarrerLaSonnerie()","",""],
+ [3,0,"CCMXPLAY sonnerie.wav (repli CTTS, bip)","Toutes les 4 s, attente de file réduite à 200 ms.",""],
+ [2,4,"événement appel {etat:1, num}","",""],
+ [4,2,"DECROCHER → ATA","",""],
+ [0,1,"NO CARRIER","",""],
+ [2,3,"CLCC vide → AUCUN · arreterLaSonnerie()","Journal : appel terminé avec durée.",""],
+]},
+btn:{nom:"Bouton",lanes:["GPIO 21","ISR","Bouton","NeoPixels","Haut-parleur"],steps:[
+ [0,1,"front descendant","",""],
+ [1,2,"vTaskNotifyGiveFromISR + portYIELD_FROM_ISR","Changement de contexte immédiat si la tâche Bouton est plus prioritaire que la tâche interrompue.",""],
+ [2,2,"vTaskDelay(40 ms) · encore enfoncé ?","Sinon : parasite ignoré.",""],
+ [2,3,"court : passerALAnimationSuivante()","Long (≥ 1,5 s) : allumerOuEteindreLesNeopixels(), une seule fois.",""],
+ [3,3,"NVS « neopixels » · événement neo","",""],
+ [3,4,"annoncerAuHautParleur(nom)","TTS par le modem.",""],
+ [2,2,"ulTaskNotifyTake(pdTRUE, 0)","Efface les notifications dues aux rebonds du relâchement.",""],
+]},
+};
+let cur="boot",step=0;
+const tabs=$("#seqtabs");
+Object.keys(SEQS).forEach(k=>{const b=document.createElement("button");b.className="tab";b.role="tab";b.textContent=SEQS[k].nom;b.setAttribute("aria-selected",k===cur?"true":"false");b.addEventListener("click",()=>{cur=k;step=0;tabs.querySelectorAll("button").forEach(x=>x.setAttribute("aria-selected",x===b?"true":"false"));drawSeq()});tabs.appendChild(b)});
+const ss=$("#seqsvg");
+function drawSeq(){
+  const S=SEQS[cur],L=S.lanes.length,LW=170,top=56,RH=40,w=L*LW+20,h=top+S.steps.length*RH+20;
+  ss.setAttribute("viewBox",`0 0 ${w} ${h}`);ss.style.minWidth=Math.min(w,820)+"px";ss.innerHTML="";
+  const df=el("defs",{},ss);
+  [["sq","var(--muted)"],["sqa","var(--accent)"]].forEach(([id,c])=>{const m=el("marker",{id,viewBox:"0 0 10 10",refX:"9",refY:"5",markerWidth:"7",markerHeight:"7",orient:"auto-start-reverse"},df);el("path",{d:"M0,0 L10,5 L0,10 z",fill:c},m)});
+  const lx=i=>10+i*LW+LW/2;
+  S.lanes.forEach((n,i)=>{el("rect",{x:lx(i)-75,y:8,width:150,height:30,rx:4,fill:"var(--sunk)",stroke:"var(--line)"},ss);const t=el("text",{x:lx(i),y:28,"text-anchor":"middle",fill:"var(--ink)","font-family":"var(--f-body)","font-size":"12.5","font-weight":"600"},ss);t.textContent=n;el("line",{x1:lx(i),y1:38,x2:lx(i),y2:h-8,stroke:"var(--line)","stroke-dasharray":"3 4"},ss)});
+  S.steps.forEach((s,i)=>{
+    const [a,b,lab]=s,y=top+i*RH+RH/2,on=i===step,g=el("g",{class:"seq-row"},ss);
+    el("rect",{x:0,y:top+i*RH,width:w,height:RH,fill:on?"var(--sunk)":"transparent"},g);
+    const c=on?"var(--accent)":"var(--muted)",mk=on?"sqa":"sq";
+    const nb=el("text",{x:8,y:y+4,fill:c,"font-family":"var(--f-mono)","font-size":"10.5"},g);nb.textContent=i+1;
+    if(a===b){const lft=a===L-1,dir=lft?-1:1;el("path",{d:`M${lx(a)},${y-8} h${34*dir} v14 h${-30*dir}`,fill:"none",stroke:c,"stroke-width":on?2:1.3,"marker-end":`url(#${mk})`},g);const t=el("text",{x:lx(a)+42*dir,y:y+3,"text-anchor":lft?"end":"start",fill:on?"var(--ink)":"var(--muted)","font-family":"var(--f-mono)","font-size":"11"},g);t.textContent=lab}
+    else{const x1=lx(a)+(b>a?4:-4),x2=lx(b)+(b>a?-6:6);el("line",{x1,y1:y+6,x2,y2:y+6,stroke:c,"stroke-width":on?2:1.3,"marker-end":`url(#${mk})`},g);const t=el("text",{x:(x1+x2)/2,y:y,"text-anchor":"middle",fill:on?"var(--ink)":"var(--muted)","font-family":"var(--f-mono)","font-size":"11",class:"elabel"},g);t.textContent=lab}
+    g.addEventListener("click",()=>{step=i;drawSeq()});
+  });
+  const s=S.steps[step];
+  $("#stepcard").innerHTML=`<div class="seq-ctrl"><button class="step" id="sp" ${step===0?"disabled":""}>← Précédent</button><button class="step" id="sn" ${step===S.steps.length-1?"disabled":""}>Suivant →</button><span class="count">${step+1} / ${S.steps.length}</span></div>
+   <div class="n">${step+1}</div><span class="eyebrow">${esc(S.lanes[s[0]])} → ${esc(S.lanes[s[1]])}</span><pre>${esc(s[2])}</pre>${s[3]?`<p>${esc(s[3])}</p>`:""}${s[4]?`<p class="muted mono" style="font-size:12px">${esc(s[4])}</p>`:""}`;
+  $("#sp").onclick=()=>{if(step>0){step--;drawSeq()}};$("#sn").onclick=()=>{if(step<S.steps.length-1){step++;drawSeq()}};
+}
+drawSeq();
+document.addEventListener("keydown",e=>{
+  const r=$("#sequences").getBoundingClientRect();if(r.top>window.innerHeight||r.bottom<0)return;
+  if(e.target.closest&&e.target.closest("input,textarea"))return;
+  const S=SEQS[cur];if(e.key==="ArrowRight"&&step<S.steps.length-1){step++;drawSeq()}if(e.key==="ArrowLeft"&&step>0){step--;drawSeq()}
+});
+
+/* ═════════════ 5. AT ═════════════ */
+const AT=[
+ ["Modem (démarrage)","AT, ATE0, AT+CMEE=2, AT+CGMM, AT+CGMR, AT+CGSN, AT+CLVL?, AT+CPIN?, AT+CMGF=1, AT+CSCS=\"UCS2\", AT+CSMP=17,167,0,8, AT+CNMI=2,1,0,0,0, AT+CLIP=1","une fois","0,5 à 2 s"],
+ ["GPS","AT+CGNSSPWR=1, AT+CGNSSINFO","1 s","2 s (5 s pour l'allumage)"],
+ ["Réseau 4G","AT+CPIN?, AT+CICCID, AT+CIMI, AT+CNUM, AT+CSQ, AT+CEREG?, AT+CREG?, AT+COPS?, AT+CPSI?, AT+CGPADDR=1, AT+CGDCONT?, AT+CBC","10 s","3 s chacune"],
+ ["Horloge","AT+CTZU=1, AT+CCLK?","30 s puis 1 h","2 s"],
+ ["SMS","AT+CMGS (texte ou UCS2, Ctrl-Z), AT+CSCS=\"GSM\"/\"UCS2\", AT+CSMP, AT+CMGR, AT+CMGL, AT+CMGD","à la demande","60 s par SMS, 15 s pour la liste"],
+ ["Appels","ATD<n>;, ATA, AT+CHUP, AT+CLCC","à la demande, CLCC 2 s pendant un appel","10 s"],
+ ["Haut-parleur","AT+CDTAM=0, AT+CSDVC, AT+CLVL, AT+CTTSPARAM, AT+CTTS, AT+CCMXPLAY, AT+CCMXSTOP, AT+SIMTONE, AT+FSDEL, AT+CFTRANRX","à la demande","1 à 5 s, transfert 30 s + taille/5"],
+];
+$("#attbl tbody").innerHTML=AT.map(r=>`<tr><td><b>${esc(r[0])}</b></td><td class="mono" style="font-size:12px">${esc(r[1])}</td><td>${esc(r[2])}</td><td>${esc(r[3])}</td></tr>`).join("");
+
+/* ═════════════ 6. BLE ═════════════ */
+const GATT=[
+ ["0002","Données","read, notify","publierUnEvenementVersLAppli() : gps, bat, 4g, sys, ble, mem, sim, carte, neo, appel, taches, ls, photo, dl_debut/fin"],
+ ["0003","Commande","write","RappelsDeLaCommande → fileDesCommandes"],
+ ["0004","Réponse","notify","repondreALAppli() : {t:rep, cmd, ok, msg}"],
+ ["0005","Journal","notify","tâche Appli, 5 lignes par tour au plus"],
+ ["0006","OTA contrôle","write, notify","START / END / ABORT → fileDeLaMiseAJour ; OK/ERR en retour"],
+ ["0007","OTA données","write, write nr","morceaux du firmware → fileDeLaMiseAJour"],
+ ["0008","Fichier","notify","octets d'un fichier téléchargé (tâche Fichiers)"],
+ ["0009","Fichier entrant","write","morceaux → fileDesMorceaux (PSRAM)"],
+];
+$("#gatttbl tbody").innerHTML=`<tr><td class="mono">0001</td><td><b>Service</b></td><td></td><td class="muted">7a3b000x-5c1e-4b8a-9f2d-6d6f746f3031 · 40 handles</td></tr>`+GATT.map(r=>`<tr><td class="mono">${r[0]}</td><td><b>${esc(r[1])}</b></td><td class="mono" style="font-size:12px">${esc(r[2])}</td><td>${esc(r[3])}</td></tr>`).join("");
+(function(){
+  const g=$("#tl");const ev=[
+   ["0 s","onConnect","puissance +18 dBm sur la liaison, esp_ble_set_encryption(MITM)"],
+   ["","Chiffrement","le téléphone demande le code PIN (premier appairage)"],
+   ["≈ 1 s","onAuthenticationComplete","telephoneAuthentifie = true, sinon disconnect()"],
+   ["+1,5 s","envoyerToutLEtat()","le temps que le téléphone écrive les CCCD"],
+   ["…","GAP UPDATE_CONN_PARAMS","Android impose souvent 5 s de supervision"],
+   ["+15 s","updateConnParams(12, 24, 0, 2000)","15 à 30 ms, latence 0, coupure à 20 s"],
+   ["toutes 5 s","esp_ble_gap_read_rssi","RSSI publié dans le message ble"],
+   ["coupure","onDisconnect","annule OTA et transferts, note la raison, relance l'annonce"],
+  ];
+  ev.forEach((e,i)=>{const y=34+i*40;el("circle",{cx:40,cy:y,r:5,fill:i===5?"var(--accent)":"var(--c0)"},g);
+   const a=el("text",{x:30,y:y+4,"text-anchor":"end",fill:"var(--muted)","font-family":"var(--f-mono)","font-size":"10"},g);a.textContent=e[0];
+   const b=el("text",{x:56,y:y,fill:"var(--ink)","font-family":"var(--f-mono)","font-size":"12","font-weight":"500"},g);b.textContent=e[1];
+   const c=el("text",{x:56,y:y+15,fill:"var(--muted)","font-size":"11.5"},g);c.textContent=e[2];});
+})();
+
+/* ═════════════ 7. MÉMOIRE ═════════════ */
+const PARTS=[
+ ["boot",0x0,0x8000,"small","Chargeur de second niveau + table de partitions (0x8000).","Le chargeur d'Arduino 2.x : pas d'annulation automatique (rollback)."],
+ ["nvs",0x9000,0x5000,"small","20 Ko · Preferences et clés de liaison Bluetooth.","Réglages du module (voir tableau NVS) et bonding Bluedroid."],
+ ["otadata",0xE000,0x2000,"small","8 Ko · quelle partition app démarrer.","Basculée par Update.end() une fois le MD5 vérifié."],
+ ["app0",0x10000,0x640000,"app0","6,25 Mo · emplacement A.","Firmware de ≈ 1,1 Mo : 18 % de l'emplacement. Marge pour des années."],
+ ["app1",0x650000,0x640000,"app1","6,25 Mo · emplacement B.","La mise à jour écrit toujours dans l'emplacement qui ne tourne pas."],
+ ["spiffs",0xC90000,0x360000,"free","3,4 Mo · inutilisée.","Pourrait accueillir LittleFS (sons, configuration) si la carte SD est absente."],
+ ["coredump",0xFF0000,0x10000,"small","64 Ko · vidage après plantage.","Lisible avec espcoredump.py pour analyser un plantage."],
+];
+const total=0x1000000,pe=$("#parts"),pi=$("#partinfo");
+function showPart(i){const p=PARTS[i];pe.querySelectorAll(".part").forEach((x,j)=>x.classList.toggle("sel",j===i));pi.innerHTML=`<span class="eyebrow">0x${p[1].toString(16).toUpperCase()} · 0x${p[2].toString(16).toUpperCase()} octets</span><h3>${p[0]}</h3><p>${esc(p[4])}</p><p class="muted">${esc(p[5])}</p>`}
+PARTS.forEach((p,i)=>{const d=document.createElement("div");d.className="part "+p[3];d.tabIndex=0;d.style.flex=Math.max(p[2]/total*100,3.5)+" 1 0";d.innerHTML=`<b>${p[0]}</b><span>${p[2]>=0x100000?(p[2]/0x100000).toFixed(2).replace(".",",")+" Mo":(p[2]/1024)+" Ko"}</span>`;d.addEventListener("click",()=>showPart(i));d.addEventListener("keydown",e=>{if(e.key==="Enter")showPart(i)});pe.appendChild(d)});
+showPart(4);
+$("#ramtbl tbody").innerHTML=[
+ ["Piles des 19 tâches","88 Ko","47 Ko cœur 0, 43 Ko cœur 1"],
+ ["Pile Bluedroid + contrôleur","≈ 100 à 130 Ko","tâches, tampons ACL, base GATT (estimation)"],
+ ["Files de messages","≈ 25 Ko","journal 7,5 Ko, commandes 4 Ko, appli 4 Ko, OTA 4 Ko, SMS 2 Ko…"],
+ ["Tampon RX UART modem","4 Ko","listes de SMS longues"],
+ ["Tampon de réception de fichier","8 Ko","seulement pendant un envoi"],
+ ["Seuil d'alerte","20 Ko libres","signalé par la tâche Système"],
+].map(r=>`<tr><td>${r[0]}</td><td class="num">${r[1]}</td><td class="muted">${r[2]}</td></tr>`).join("");
+$("#psramtbl tbody").innerHTML=[
+ ["Tampons caméra","2 × JPEG UXGA","fb_location = CAMERA_FB_IN_PSRAM"],
+ ["fileDesMorceaux","≈ 25 Ko","48 × 522 o, xQueueCreateStatic"],
+ ["Son copié vers le modem","≤ 400 Ko","ps_malloc, libéré après AT+CFTRANRX"],
+].map(r=>`<tr><td>${r[0]}</td><td class="num">${r[1]}</td><td class="muted">${r[2]}</td></tr>`).join("");
+$("#nvstbl tbody").innerHTML=[
+ ["systeme","demarrages","Système, à chaque démarrage"],
+ ["alertes","numero, actives","commandes ALERTES_NUMERO, ALERTES"],
+ ["haut-parleur","volume, sortie","commandes VOLUME, SORTIE_AUDIO"],
+ ["neopixels","animation, luminosite","bouton, commandes NEO*"],
+ ["(Bluedroid)","clés de liaison","appairage"],
+].map(r=>`<tr><td class="mono">${r[0]}</td><td class="mono">${r[1]}</td><td class="muted">${r[2]}</td></tr>`).join("");
+
+
+/* ═════════════ 8 bis. BROCHAGE ═════════════ */
+(function(){
+ const P={
+  "3V3":["pw","Alimentation 3,3 V.",""],"5V":["pw","Entrée / sortie 5 V.",""],"GND":["pw","Masse.",""],"VBAT":["pw","Tension de la batterie 18650.",""],
+  "TXD":["fw","UART0 TX (GPIO 43) vers le convertisseur CH343 du port USB-C.","Moniteur série 115200 (Serial). ARDUINO_USB_CDC_ON_BOOT=0 car l'USB natif de l'ESP32-S3 est câblé sur le modem."],
+  "RXD":["fw","UART0 RX (GPIO 44) depuis le CH343.","Moniteur série."],
+  "GPIO 4":["fw","Carte TF : SDMMC_CMD.","BROCHE_CARTE_SD_COMMANDE = 4. Conforme."],
+  "GPIO 5":["fw","Carte TF : SDMMC_CLK.","BROCHE_CARTE_SD_HORLOGE = 5. Conforme."],
+  "GPIO 6":["fw","Carte TF : SDMMC_DATA (D0).","BROCHE_CARTE_SD_DONNEES = 6, mode 1 bit. Conforme. Aucune broche de détection de carte n'est câblée : le README indiquait « CD 46 » à tort (46 est PCLK de la caméra)."],
+  "GPIO 46":["fw","Caméra : PCLK (V2).","module_carte.cpp V2 : cameraPCLK = 46. Conforme. Broche de configuration au démarrage (strapping), sans effet ici."],
+  "GPIO 15":["fw","Caméra : SIO_DAT (SCCB).","Partagée avec la jauge MAX17048 en V2 (jaugeSDA = 15) : la caméra réutilise le port I2C 0 ouvert par Wire. Conforme à l'image."],
+  "GPIO 16":["fw","Caméra : SIO_CLK (SCCB).","Partagée avec la jauge (jaugeSCL = 16). Conforme."],
+  "GPIO 7":["fw","Caméra : Y2.","cameraY2 = 7. Conforme."],"GPIO 8":["fw","Caméra : Y3.","Conforme."],"GPIO 9":["fw","Caméra : Y4.","Conforme."],"GPIO 10":["fw","Caméra : Y5.","Conforme."],
+  "GPIO 11":["fw","Caméra : Y6.","Conforme."],"GPIO 12":["fw","Caméra : Y7.","Conforme."],"GPIO 13":["fw","Caméra : Y8.","Conforme."],"GPIO 14":["fw","Caméra : Y9.","cameraY9 = 14. Conforme."],
+  "GPIO 41":["fw","Caméra : HREF (V2), signal JTAG MTDI.","cameraHREF = 41. C'est pour elle que la bande NeoPixel a quitté le GPIO 41."],
+  "GPIO 40":["hw","A7670E : RI (Ring Indicator), signal JTAG MTDO.","Sortie du modem qui passe à l'état bas à chaque appel et à chaque URC. La bande NeoPixel y était jusqu'à la 0.4.3 (deux sorties face à face) ; elle est sur le GPIO 2 depuis la 0.4.4. Plus tard, RI pourra réveiller l'ESP32 sur un appel ou un SMS."],
+  "GPIO 39":["fw","Caméra : XCLK (V2), signal JTAG MTCK.","cameraXCLK = 39, 20 MHz par LEDC. Conforme."],
+  "GPIO 45":["hw","A7670E : DTR. Broche de configuration (tension VDD_SPI) au démarrage.","Non utilisée par le firmware. Servirait à mettre le modem en veille (AT+CSCLK=1) si l'on gère un jour la consommation."],
+  "GPIO 2":["fw","Libre sur la carte (marquée en vert sur l'image).","Bande NeoPixel depuis la 0.4.4 (BROCHE_BANDE_NEOPIXELS = 2), pilotée par le RMT. La détection de version y sonde brièvement la jauge V1 avant que la bande ne démarre ; sur une V1 la bande est désactivée."],
+  "GPIO 42":["fw","Caméra : VSYNC (V2), signal JTAG MTMS.","cameraVSYNC = 42. Conforme."],
+  "GPIO 1":["free","Libre, ADC1_CH0, tactile 1.","Seule entrée ADC1 libre : à garder pour mesurer le 12 V de la moto par pont diviseur (BROCHE_MESURE_12V). L'ADC2 est inutilisable quand la radio est active."],
+  "GPIO 21":["fw","Libre sur la carte.","Bouton des animations (BROCHE_BOUTON_ANIMATIONS = 21) vers la masse, INPUT_PULLUP. Conforme."],
+  "GPIO 3":["free","Libre (marquée en vert). Broche de configuration (source JTAG) au démarrage.","Sondée comme SDA de la jauge V1 pendant la détection. À éviter pour une sortie qui doit avoir un niveau précis au démarrage."],
+  "GPIO 19":["hw","A7670E : USB_DN.","L'USB natif de l'ESP32-S3 est relié au modem (l'ancien firmware l'utilisait en hôte CDC). Le firmware actuel passe par l'UART."],
+  "GPIO 20":["hw","A7670E : USB_DP.","Voir GPIO 19."],
+  "GPIO 0":["free","Libre, bouton BOOT (configuration de démarrage).","Tiré bas au reset = mode téléchargement. À ne pas utiliser pour la bande ni pour un bouton externe."],
+  "GPIO 18":["fw","A7670E : UART_RXD (4G RXD), ADC2_CH7.","BROCHE_MODEM_B = 18. Le firmware essaie d'abord RX 17 / TX 18, ce qui correspond à l'image (18 = entrée RXD du modem, donc sortie TX de l'ESP32)."],
+  "GPIO 17":["fw","A7670E : UART_TXD (4G TXD), ADC2_CH6.","BROCHE_MODEM_A = 17 = RX de l'ESP32. Conforme ; l'essai dans l'autre sens ne servira pas sur cette carte."],
+ };
+ const L=[[1,"3V3"],[3,"3V3"],[5,"GND"],[7,"GPIO 4"],[9,"GPIO 5"],[11,"GPIO 6"],[13,"GPIO 46"],[15,"GPIO 15"],[17,"GPIO 16"],[19,"GPIO 7"],[21,"GPIO 8"],[23,"GPIO 9"],[25,"GPIO 10"],[27,"GPIO 11"],[29,"GPIO 12"],[31,"GPIO 13"],[33,"GPIO 14"],[35,"5V"],[37,"GND"]];
+ const R=[[2,"GND"],[4,"TXD"],[6,"RXD"],[8,"GPIO 41"],[10,"GPIO 40"],[12,"GPIO 39"],[14,"GPIO 45"],[16,"GPIO 2"],[18,"GPIO 42"],[20,"GPIO 1"],[22,"GPIO 21"],[24,"GPIO 3"],[26,"GPIO 19"],[28,"GPIO 20"],[30,"GPIO 0"],[32,"GPIO 18"],[34,"GPIO 17"],[36,"VBAT"],[38,"GND"]];
+ const short={"GPIO 4":"SD CMD","GPIO 5":"SD CLK","GPIO 6":"SD D0","GPIO 46":"Cam PCLK","GPIO 15":"SIO_DAT · jauge SDA","GPIO 16":"SIO_CLK · jauge SCL","GPIO 7":"Cam Y2","GPIO 8":"Cam Y3","GPIO 9":"Cam Y4","GPIO 10":"Cam Y5","GPIO 11":"Cam Y6","GPIO 12":"Cam Y7","GPIO 13":"Cam Y8","GPIO 14":"Cam Y9","GPIO 41":"Cam HREF","GPIO 40":"RI modem","GPIO 39":"Cam XCLK","GPIO 45":"DTR modem","GPIO 2":"NeoPixel","GPIO 42":"Cam VSYNC","GPIO 1":"libre · ADC1","GPIO 21":"Bouton","GPIO 3":"libre","GPIO 19":"USB D− modem","GPIO 20":"USB D+ modem","GPIO 0":"BOOT","GPIO 18":"UART → modem","GPIO 17":"UART ← modem","TXD":"Série (CH343)","RXD":"Série (CH343)"};
+ const st={fw:["var(--panel)","var(--ok)"],bad:["var(--panel)","var(--crit)"],hw:["var(--hwt)","var(--hw)"],free:["var(--panel)","var(--line)"],pw:["var(--sunk)","var(--line)"]};
+ const s=$("#pinsvg"),els={};
+ el("rect",{x:300,y:14,width:100,height:662,rx:8,fill:"var(--sunk)",stroke:"var(--line)"},s);
+ 
+ function pin(side,i,num,name){
+  const y=24+i*34,info=P[name],[f,c]=st[info[0]],g=el("g",{class:"pin",tabindex:"0",role:"button","aria-label":name+" : "+info[1]},s);
+  const bx=side?410:20,w=270;
+  el("rect",{x:bx,y:y,width:w,height:28,rx:4,fill:f,stroke:c,"stroke-width":info[0]==="bad"?2.5:1.5},g);
+  el("circle",{cx:side?382:318,cy:y+14,r:7,fill:"var(--panel)",stroke:"var(--muted)"},g);
+  const n=el("text",{x:side?366:334,y:y+18,"text-anchor":side?"end":"start",fill:"var(--muted)","font-family":"var(--f-mono)","font-size":"10.5"},g);n.textContent=num;
+  const t1=el("text",{x:side?bx+10:bx+w-10,y:y+18,"text-anchor":side?"start":"end",fill:"var(--ink)","font-family":"var(--f-mono)","font-size":"12","font-weight":"500"},g);t1.textContent=name;
+  if(short[name]){const t2=el("text",{x:side?bx+w-10:bx+10,y:y+18,"text-anchor":side?"end":"start",fill:info[0]==="bad"?"var(--crit)":"var(--muted)","font-family":"var(--f-body)","font-size":"11.5","font-weight":info[0]==="bad"?"600":"400"},g);t2.textContent=short[name]}
+  const go=()=>showPin(name,num);g.addEventListener("click",go);g.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();go()}});
+  els[name+num]=g;
+ }
+ L.forEach((p,i)=>pin(0,i,p[0],p[1]));R.forEach((p,i)=>pin(1,i,p[0],p[1]));
+ const lbl={fw:"Utilisée par le firmware",bad:"Conflit",hw:"Câblée sur la carte, non utilisée",free:"Libre",pw:"Alimentation"};
+ function showPin(name,num){
+  const info=P[name];
+  $("#pininfo").innerHTML=`<span class="eyebrow">Broche ${num} · connecteur ${num%2?1:2}</span><h3 style="font-size:26px">${esc(name)}</h3><div class="chips"><span class="chip" style="border-color:${st[info[0]][1]};color:${info[0]==="bad"?"var(--crit)":"var(--ink)"}">${lbl[info[0]]}</span></div><div class="blk"><h4>Sur la carte</h4><p>${esc(info[1])}</p></div>${info[2]?`<div class="blk ${info[0]==="bad"?"watch":""}"><h4>Dans le firmware</h4><p>${esc(info[2])}</p></div>`:""}`;
+ }
+ showPin("GPIO 2",16);
+})();
+
+/* ═════════════ 8. DÉCISIONS ═════════════ */
+const DEC=[
+ ["Une tâche FreeRTOS par module","Isolation : un AT qui attend 60 s n'arrête ni les LED ni le BLE. Chaque module se lit seul, avec ses attentes explicites. La pile restante de chacune est mesurée.","Super-boucle avec millis() : impossible avec des commandes AT bloquantes. Boucle d'événements unique (esp_event) : moins de RAM, mais tout devient machine à états non bloquante. Coût accepté : 88 Ko de piles."],
+ ["Communications sur le cœur 0, traitements sur le cœur 1","Bluedroid et le contrôleur BLE sont épinglés sur le cœur 0 : les rappels et les tâches qui leur parlent partagent le même cache et évitent les IPC. Le cœur 1 garde les LED à 50 img/s et les écritures SD loin de la radio.","Tout sur le cœur 1 (défaut d'Arduino) : la radio et les LED se gêneraient. Sans épinglage (tskNO_AFFINITY) : moins prévisible, et les tâches peuvent migrer au milieu d'un accès sous portMUX."],
+ ["Priorités 1 à 3 seulement","Rester très en dessous des tâches système garantit que le firmware n'affame jamais la radio, esp_timer ou l'IPC. Trois niveaux suffisent à exprimer « propriétaire de ressource », « réaction à un événement », « sondage ».","Des priorités fines (5, 8, 12…) : plus difficiles à raisonner et sans bénéfice mesurable ici."],
+ ["Propriétaire unique de chaque ressource","UART modem, carte SD, flash OTA, notifications BLE : un module, un verrou. Les autres envoient une demande ou lisent une copie.","Accès libre avec précautions locales : c'est exactement ce qui mélangeait les réponses AT et corrompait les écritures SD."],
+ ["Copies d'état sous mutex","Les lecteurs (Appli BLE, Alertes, LED) obtiennent une structure entière et cohérente sans jamais bloquer longtemps l'écrivain.","Variables globales volatiles champ par champ : risque de lire une latitude neuve avec une longitude ancienne."],
+ ["Notifications de tâche pour réveiller","Un compteur par tâche, sans objet noyau, utilisable depuis une ISR ; plusieurs demandes se fusionnent.","Sémaphores binaires : même effet, plus de RAM et une poignée de plus à créer."],
+ ["Protocole texte (JSON + commandes)","Lisible dans nRF Connect et dans le journal, extensible sans changer le GATT, trivial à parser côté Kotlin.","Binaire (CBOR, protobuf) : plus compact, mais débogage à l'aveugle ; le débit n'est pas la limite."],
+ ["Tout passe par le BLE, plus de Wi-Fi","Choix de Meudo (5 novembre) : une seule radio, plus de RAM, pas de point d'accès à gérer.","SoftAP Wi-Fi à la demande (0.4.0) : plus rapide pour l'OTA et les gros fichiers, retiré."],
+ ["Bluedroid conservé","Fonctionne et a été mis au point (paramètres de liaison, RSSI, raisons de coupure).","NimBLE : nettement plus léger en RAM ; migration possible plus tard, à faire d'un bloc."],
+ ["Code en français, noms explicites","Le firmware se lit comme un texte ; chaque fonction dit ce qu'elle fait.","Noms courts anglais : plus habituels, mais moins accessibles pour le propriétaire du projet."],
+];
+$("#dec").innerHTML=DEC.map(d=>`<div class="decrow"><h3>${esc(d[0])}</h3><div><div class="lbl y">Pourquoi</div><p>${esc(d[1])}</p></div><div><div class="lbl n">Écarté</div><p>${esc(d[2])}</p></div></div>`).join("");
+
+/* ═════════════ 9. À SURVEILLER ═════════════ */
+const WATCH=[
+ ["crit","Élevé","Pas d'annulation après une mauvaise mise à jour","Le chargeur d'Arduino n'active pas le rollback et le firmware ne valide pas son démarrage. Un firmware qui démarre mais casse le BLE ne peut être remplacé que par l'USB. Piste : chargeur ESP-IDF avec CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE et esp_ota_mark_app_valid_cancel_rollback() après la première connexion BLE authentifiée."],
+ ["warn","Moyen","Le verrou modem peut être tenu 30 s et plus","Pendant un envoi de SMS, GPS, réseau, horloge et haut-parleur expirent (DELAI_DEPASSE). Les URC restent distribuées par la tâche SMS elle-même, rien n'est perdu, mais la position se fige. Acceptable ; à garder en tête si l'on ajoute des données IP."],
+ ["warn","Moyen","Port I2C 0 partagé en V2","La jauge (tâche Batterie, Wire) et le SCCB de la caméra (pilote esp32-camera) utilisent le même port. Le SCCB n'est sollicité qu'à l'initialisation et aux réglages, d'où un risque faible, mais un réglage de capteur en cours de route devrait prendre le même verrou que Wire."],
+ ["warn","Moyen","String Arduino dans les chemins fréquents","lireUneLigne() concatène caractère par caractère, et les copies d'état réseau allouent. Le tas interne se fragmente lentement : surveiller ram_bloc (plus grand bloc libre) dans l'écran Système sur de longues durées."],
+ ["info","Faible","Rappels d'URC exécutés dans la tâche qui tient le verrou","Ils tournent souvent dans GPS ou Réseau. La règle « pas d'AT, xQueueSend(…, 0) » est respectée partout ; à rappeler à chaque nouvel abonnement."],
+ ["info","Faible","Chien de garde du cœur 1","La configuration Arduino surveille la tâche Idle du cœur 0 seulement. Une tâche du cœur 1 qui bouclerait sans attente ne serait pas détectée."],
+ ["info","Faible","malloc dans BTC pour chaque morceau OTA","520 octets alloués puis libérés à chaque écriture. Toujours la même taille, donc peu de fragmentation ; un tampon static comme dans l'explorateur serait plus sobre."],
+ ["info","À tester","Points matériels non vérifiés","Caméra en V2 depuis que la bande a quitté le GPIO 41 ; bande NeoPixel sur son nouveau GPIO 2 ; broche PWRKEY du modem ; ordre des champs de CGNSSINFO selon le logiciel du modem ; source d'alimentation déduite et non mesurée."],
+];
+$("#watch").innerHTML=WATCH.map(w=>`<div class="w ${w[0]}"><div class="sev">${esc(w[1])}</div><div><h3>${esc(w[2])}</h3><p>${esc(w[3])}</p></div></div>`).join("");
+})();
+</script>

@@ -12,7 +12,7 @@
         Jauge batterie I2C SCL      GPIO 2      GPIO 16
         Caméra XCLK                 GPIO 34     GPIO 39
         Caméra VSYNC                GPIO 36     GPIO 42
-        Caméra HREF                 GPIO 35     GPIO 41   (la bande NeoPixel est donc sur GPIO 40)
+        Caméra HREF                 GPIO 35     GPIO 41   (la bande NeoPixel est sur GPIO 2)
         Caméra PCLK                 GPIO 37     GPIO 46
 
    Méthode de détection, dans l'ordre :

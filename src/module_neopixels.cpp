@@ -13,6 +13,7 @@
 #include "module_reseau_4g.h"
 #include "module_haut_parleur.h"
 #include "module_journal.h"
+#include "module_carte.h"
 #include "module_systeme.h"
 
 namespace {
@@ -280,6 +281,14 @@ void decrireLesNeopixels(JsonDocument& document) {
 }
 
 bool demarrerModuleNeopixels() {
+    // Sur la carte V1, le GPIO 2 est l'horloge I2C de la jauge de batterie : on ne pilote pas la bande dessus.
+    const BrochesDeLaCarte& broches = brochesDeLaCarte();
+    if (versionDeLaCarte() == VersionDeCarte::V1
+        && (BROCHE_BANDE_NEOPIXELS == broches.jaugeSDA || BROCHE_BANDE_NEOPIXELS == broches.jaugeSCL)) {
+        ecrireDansLeJournal("[NEOPIXELS] GPIO %d utilisé par la jauge de batterie sur la carte V1 : bande désactivée.",
+                            BROCHE_BANDE_NEOPIXELS);
+        return false;
+    }
     Preferences memoirePermanente;
     memoirePermanente.begin("neopixels", true);
     animationEnCours = constrain(memoirePermanente.getInt("animation", 0), 0, NOMBRE_D_ANIMATIONS - 1);

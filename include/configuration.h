@@ -10,13 +10,14 @@
 #include <Arduino.h>
 
 // ─── Version du firmware (affichée dans l'application). À augmenter à chaque nouvelle version. ───
-#define VERSION_DU_FIRMWARE "0.4.3"
+#define VERSION_DU_FIRMWARE "0.4.4"
 
 // ─── Nom du module dans les fichiers (photos) et en Bluetooth ───
 #define NOM_DU_MODULE_DANS_LES_FICHIERS "ESP32-A7670"
 
 // ─── Broches ajoutées par Meudo (identiques sur V1 et V2) ───
-#define BROCHE_BANDE_NEOPIXELS          40      // bande de 14 LED WS2812B (pas 41 : la caméra de la V2 l'utilise)
+#define BROCHE_BANDE_NEOPIXELS           2      // bande de 14 LED WS2812B. Pas 41 (HREF de la caméra V2),
+                                                // pas 40 (sortie RI du modem A7670E, d'après le brochage Waveshare).
 #define NOMBRE_DE_LED_DE_LA_BANDE       14
 #define BROCHE_BOUTON_ANIMATIONS        21      // bouton entre la broche et la masse (GND)
 
