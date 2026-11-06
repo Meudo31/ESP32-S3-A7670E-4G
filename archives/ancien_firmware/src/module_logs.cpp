@@ -2,6 +2,7 @@
 
 #include "module_logs.h"
 #include "module_SD.h"
+#include "module_appli.h"
 
 // --- CONFIGURATION ---
 #define TAILLE_TAMPON_SD 512    // Taille du tampon RAM avant écriture sur la SD (en octets)
@@ -20,6 +21,9 @@ void my_log_printf(const char *format, ...) {
     va_start(args, format);
     vsnprintf(messageFormate, sizeof(messageFormate), format, args);
     va_end(args);
+
+    // Copie vers l'application Android si elle est connectée (non bloquant)
+    appliBLE_transmettreLog(messageFormate);
 
     // Si la file d'attente existe, on y envoie le message de manière non-bloquante (0 tick d'attente)
     if (queueLogs != NULL) {
