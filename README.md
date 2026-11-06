@@ -57,7 +57,7 @@ Communes aux deux versions (voir [`include/configuration.h`](include/configurati
 | Bande NeoPixel | 40 |
 | Bouton des animations | 21 |
 | Modem A7670E (UART, sens détecté au démarrage) | 17, 18 |
-| Carte SD (SDMMC 1 bit) | CLK 5, CMD 4, D0 6, CD 46 |
+| Carte SD (SDMMC 1 bit) | CLK 5, CMD 4, D0 6 (pas de détection de carte câblée) |
 | LED RGB de la carte | 38 |
 | Caméra SIOD / SIOC, D0 à D7 | 15 / 16, 7 à 14 |
 | Moniteur série (UART0, via CH343) | TX 43, RX 44 |
@@ -154,5 +154,6 @@ Ces points ne peuvent pas être testés sans la carte :
 ## Documentation
 
 - [Anatomie du firmware](docs/architecture_firmware.html) : diagramme interactif (tâches FreeRTOS, files et verrous, séquences, modem, BLE, mémoire). Télécharger le fichier et l'ouvrir dans un navigateur.
+- [Brochage de la carte](ESP32-A7970_Brochage.png) (image Waveshare) et [tableau des GPIO](ESP32-A7970_Brochage.csv).
 - [Documentation Waveshare ESP32-S3-A7670E-4G](https://docs.waveshare.com/ESP32-S3-A7670E-4G)
 - [FAQ Waveshare](https://docs.waveshare.com/ESP32-S3-A7670E-4G/FAQ)

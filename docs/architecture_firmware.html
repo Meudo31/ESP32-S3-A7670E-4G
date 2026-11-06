@@ -157,6 +157,14 @@ figcaption{font-size:13px;color:var(--muted);max-width:90ch}
 .w p{font-size:14px}
 @media (max-width:600px){.w{grid-template-columns:minmax(0,1fr)}}
 
+.pin-grid{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:16px;align-items:start}
+@media (max-width:1100px){.pin-grid{grid-template-columns:minmax(0,1fr)}}
+#pinsvg{min-width:640px}
+.pin{cursor:pointer}
+.pin:focus{outline:none}
+.pin:focus-visible rect{stroke-width:3}
+.pinlegend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--muted);padding:10px 14px;border-top:1px solid var(--line)}
+.pinlegend i{display:inline-block;width:12px;height:12px;border-radius:2px;vertical-align:-1px;margin-right:6px;border:1.5px solid}
 footer{padding-block:40px 60px;color:var(--muted);font-size:13px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -171,7 +179,7 @@ footer{padding-block:40px 60px;color:var(--muted);font-size:13px}
 </div></header>
 
 <nav class="toc" aria-label="Sections"><div class="wrap">
-  <a href="#carte">Carte</a><a href="#taches">Tâches</a><a href="#synchro">Synchro</a><a href="#sequences">Séquences</a><a href="#modem">Modem AT</a><a href="#ble">Bluetooth</a><a href="#memoire">Mémoire</a><a href="#choix">Choix</a><a href="#attention">À surveiller</a>
+  <a href="#carte">Carte</a><a href="#taches">Tâches</a><a href="#synchro">Synchro</a><a href="#sequences">Séquences</a><a href="#modem">Modem AT</a><a href="#ble">Bluetooth</a><a href="#memoire">Mémoire</a><a href="#brochage">Brochage</a><a href="#choix">Choix</a><a href="#attention">À surveiller</a>
 </div></nav>
 
 <section id="carte"><div class="wrap">
@@ -374,9 +382,29 @@ rendreLeModem()</pre></div>
   </div>
 </div></section>
 
+<section id="brochage"><div class="wrap">
+  <div class="sec-head">
+    <span class="eyebrow">08 · Brochage</span>
+    <h2>Les deux connecteurs, broche par broche</h2>
+    <p>D'après l'image de brochage Waveshare extraite par Meudo (<code>ESP32-A7970_Brochage.png</code> et <code>.csv</code> à la racine du dépôt), confrontée à <code>configuration.h</code> et <code>module_carte.cpp</code>. Les broches de caméra de l'image sont celles de la carte V2. Cliquez une broche.</p>
+  </div>
+  <div class="pin-grid">
+    <div class="svgbox"><svg id="pinsvg" viewBox="0 0 700 690" role="img" aria-label="Connecteurs 1 (broches impaires) et 2 (broches paires) de la carte, chaque broche colorée selon son usage : utilisée par le firmware, câblée sur la carte, libre, alimentation, ou en conflit (GPIO 40)."></svg>
+      <div class="pinlegend">
+        <span><i style="border-color:var(--ok);background:var(--panel)"></i>utilisée par le firmware, conforme</span>
+        <span><i style="border-color:var(--crit);background:var(--panel)"></i>conflit</span>
+        <span><i style="border-color:var(--hw);background:var(--hwt)"></i>câblée sur la carte, non utilisée</span>
+        <span><i style="border-color:var(--line);background:var(--panel)"></i>libre</span>
+        <span><i style="border-color:var(--line);background:var(--sunk)"></i>alimentation / masse</span>
+      </div>
+    </div>
+    <div class="card" id="pininfo"></div>
+  </div>
+</div></section>
+
 <section id="choix"><div class="wrap">
   <div class="sec-head">
-    <span class="eyebrow">08 · Décisions transverses</span>
+    <span class="eyebrow">09 · Décisions transverses</span>
     <h2>Ce qui a été choisi, et contre quoi</h2>
   </div>
   <div class="dec" id="dec"></div>
@@ -384,9 +412,9 @@ rendreLeModem()</pre></div>
 
 <section id="attention"><div class="wrap">
   <div class="sec-head">
-    <span class="eyebrow">09 · Revue</span>
+    <span class="eyebrow">10 · Revue</span>
     <h2>À surveiller</h2>
-    <p>Relevé en relisant le code de la 0.4.3. Aucun de ces points n'a été observé sur la carte : ce sont des limites connues ou des risques, classés par gravité.</p>
+    <p>Relevé en relisant le code de la 0.4.3 et le brochage Waveshare. Aucun de ces points n'a été observé sur la carte : ce sont des limites connues ou des risques, classés par gravité.</p>
   </div>
   <div class="watchlist" id="watch"></div>
 </div></section>
@@ -431,7 +459,7 @@ const N={
  sdhw:{x:F,y:270,t:"Lecteur micro-SD",s:"SDMMC 1 bit",k:"hw"},
  camhw:{x:F,y:350,t:"Caméra OV2640/5640",s:"DVP 8 bits",k:"hw"},
  max:{x:F,y:420,t:"Jauge MAX17048",s:"I2C 0x36",k:"hw"},
- ws:{x:F,y:490,t:"Bande 14 × WS2812B",s:"GPIO 40",k:"hw"},
+ ws:{x:F,y:490,t:"Bande 14 × WS2812B",s:"GPIO 40 = RI du modem !",k:"hw"},
  btnhw:{x:F,y:560,t:"Bouton GPIO 21",s:"vers GND, pull-up",k:"hw"},
 };
 for(const id in N){N[id].w=N[id].w||W;N[id].h=N[id].h||H;N[id].id=id}
@@ -595,7 +623,7 @@ carteSD:{file:"src/module_carte_sd.cpp",chips:[["c1","cœur 1"],["c1","prio 1"],
 sdhw:{file:"include/configuration.h",chips:[["hw","SDMMC"]],role:"<p>Lecteur micro-SD câblé en 1 bit : CLK GPIO 5, CMD GPIO 4, D0 GPIO 6. Monté sur <code>/sdcard</code>.</p>"},
 camhw:{file:"include/module_carte.h",chips:[["hw","DVP"]],role:"<p>Connecteur 24 broches, OV2640 ou OV5640. D0 à D7 sur GPIO 7 à 14. XCLK, VSYNC, HREF, PCLK : 34/36/35/37 en V1, 39/42/41/46 en V2. Alimentée par le DIP « CAM ».</p>"},
 max:{file:"src/module_carte.cpp",chips:[["hw","I2C 0x36"]],role:"<p>Jauge MAX17048 sur la cellule 18650. Sa présence sur 15/16 ou 3/2 sert aussi à reconnaître la version de la carte (V2 ou V1), avec la taille de la PSRAM en dernier recours.</p>"},
-ws:{file:"include/configuration.h",chips:[["hw","GPIO 40"]],role:"<p>14 LED WS2812B (GRB, 800 kHz). Déplacée du GPIO 41 au 40 le 3 novembre pour libérer HREF de la caméra V2.</p>"},
+ws:{file:"include/configuration.h",chips:[["hw","GPIO 40"]],role:"<p>14 LED WS2812B (GRB, 800 kHz). Déplacée du GPIO 41 au 40 le 3 novembre pour libérer HREF de la caméra V2.</p>",watch:"<p>Le brochage Waveshare indique que le GPIO 40 est aussi le signal <b>RI</b> du modem (sortie). Voir la section Brochage : proposition de passer la bande sur GPIO 2.</p>"},
 btnhw:{file:"include/configuration.h",chips:[["hw","GPIO 21"]],role:"<p>Bouton entre GPIO 21 et la masse, résistance de tirage interne activée (<code>INPUT_PULLUP</code>).</p>"},
 };
 
@@ -973,6 +1001,63 @@ $("#nvstbl tbody").innerHTML=[
  ["(Bluedroid)","clés de liaison","appairage"],
 ].map(r=>`<tr><td class="mono">${r[0]}</td><td class="mono">${r[1]}</td><td class="muted">${r[2]}</td></tr>`).join("");
 
+
+/* ═════════════ 8 bis. BROCHAGE ═════════════ */
+(function(){
+ const P={
+  "3V3":["pw","Alimentation 3,3 V.",""],"5V":["pw","Entrée / sortie 5 V.",""],"GND":["pw","Masse.",""],"VBAT":["pw","Tension de la batterie 18650.",""],
+  "TXD":["fw","UART0 TX (GPIO 43) vers le convertisseur CH343 du port USB-C.","Moniteur série 115200 (Serial). ARDUINO_USB_CDC_ON_BOOT=0 car l'USB natif de l'ESP32-S3 est câblé sur le modem."],
+  "RXD":["fw","UART0 RX (GPIO 44) depuis le CH343.","Moniteur série."],
+  "GPIO 4":["fw","Carte TF : SDMMC_CMD.","BROCHE_CARTE_SD_COMMANDE = 4. Conforme."],
+  "GPIO 5":["fw","Carte TF : SDMMC_CLK.","BROCHE_CARTE_SD_HORLOGE = 5. Conforme."],
+  "GPIO 6":["fw","Carte TF : SDMMC_DATA (D0).","BROCHE_CARTE_SD_DONNEES = 6, mode 1 bit. Conforme. Aucune broche de détection de carte n'est câblée : le README indiquait « CD 46 » à tort (46 est PCLK de la caméra)."],
+  "GPIO 46":["fw","Caméra : PCLK (V2).","module_carte.cpp V2 : cameraPCLK = 46. Conforme. Broche de configuration au démarrage (strapping), sans effet ici."],
+  "GPIO 15":["fw","Caméra : SIO_DAT (SCCB).","Partagée avec la jauge MAX17048 en V2 (jaugeSDA = 15) : la caméra réutilise le port I2C 0 ouvert par Wire. Conforme à l'image."],
+  "GPIO 16":["fw","Caméra : SIO_CLK (SCCB).","Partagée avec la jauge (jaugeSCL = 16). Conforme."],
+  "GPIO 7":["fw","Caméra : Y2.","cameraY2 = 7. Conforme."],"GPIO 8":["fw","Caméra : Y3.","Conforme."],"GPIO 9":["fw","Caméra : Y4.","Conforme."],"GPIO 10":["fw","Caméra : Y5.","Conforme."],
+  "GPIO 11":["fw","Caméra : Y6.","Conforme."],"GPIO 12":["fw","Caméra : Y7.","Conforme."],"GPIO 13":["fw","Caméra : Y8.","Conforme."],"GPIO 14":["fw","Caméra : Y9.","cameraY9 = 14. Conforme."],
+  "GPIO 41":["fw","Caméra : HREF (V2), signal JTAG MTDI.","cameraHREF = 41. C'est pour elle que la bande NeoPixel a quitté le GPIO 41."],
+  "GPIO 40":["bad","A7670E : RI (Ring Indicator), signal JTAG MTDO.","Le firmware y met la bande NeoPixel (BROCHE_BANDE_NEOPIXELS = 40). Or RI est une SORTIE du modem : elle passe à l'état bas à chaque appel et à chaque URC (SMS…). Deux sorties se retrouvent face à face : courant de court-circuit possible quand les niveaux diffèrent, et trames LED corrompues à chaque impulsion RI. Le firmware n'utilise pas RI. Proposition : déplacer la bande sur GPIO 2 (libre sur la V2)."],
+  "GPIO 39":["fw","Caméra : XCLK (V2), signal JTAG MTCK.","cameraXCLK = 39, 20 MHz par LEDC. Conforme."],
+  "GPIO 45":["hw","A7670E : DTR. Broche de configuration (tension VDD_SPI) au démarrage.","Non utilisée par le firmware. Servirait à mettre le modem en veille (AT+CSCLK=1) si l'on gère un jour la consommation."],
+  "GPIO 2":["free","Libre (marquée en vert sur l'image).","Le firmware ne s'en sert que pendant la détection de version : il cherche la jauge sur 3/2 (brochage V1) si elle n'est pas sur 15/16. Candidate pour la bande NeoPixel."],
+  "GPIO 42":["fw","Caméra : VSYNC (V2), signal JTAG MTMS.","cameraVSYNC = 42. Conforme."],
+  "GPIO 1":["free","Libre, ADC1_CH0, tactile 1.","Seule entrée ADC1 libre : à garder pour mesurer le 12 V de la moto par pont diviseur (BROCHE_MESURE_12V). L'ADC2 est inutilisable quand la radio est active."],
+  "GPIO 21":["fw","Libre sur la carte.","Bouton des animations (BROCHE_BOUTON_ANIMATIONS = 21) vers la masse, INPUT_PULLUP. Conforme."],
+  "GPIO 3":["free","Libre (marquée en vert). Broche de configuration (source JTAG) au démarrage.","Sondée comme SDA de la jauge V1 pendant la détection. À éviter pour une sortie qui doit avoir un niveau précis au démarrage."],
+  "GPIO 19":["hw","A7670E : USB_DN.","L'USB natif de l'ESP32-S3 est relié au modem (l'ancien firmware l'utilisait en hôte CDC). Le firmware actuel passe par l'UART."],
+  "GPIO 20":["hw","A7670E : USB_DP.","Voir GPIO 19."],
+  "GPIO 0":["free","Libre, bouton BOOT (configuration de démarrage).","Tiré bas au reset = mode téléchargement. À ne pas utiliser pour la bande ni pour un bouton externe."],
+  "GPIO 18":["fw","A7670E : UART_RXD (4G RXD), ADC2_CH7.","BROCHE_MODEM_B = 18. Le firmware essaie d'abord RX 17 / TX 18, ce qui correspond à l'image (18 = entrée RXD du modem, donc sortie TX de l'ESP32)."],
+  "GPIO 17":["fw","A7670E : UART_TXD (4G TXD), ADC2_CH6.","BROCHE_MODEM_A = 17 = RX de l'ESP32. Conforme ; l'essai dans l'autre sens ne servira pas sur cette carte."],
+ };
+ const L=[[1,"3V3"],[3,"3V3"],[5,"GND"],[7,"GPIO 4"],[9,"GPIO 5"],[11,"GPIO 6"],[13,"GPIO 46"],[15,"GPIO 15"],[17,"GPIO 16"],[19,"GPIO 7"],[21,"GPIO 8"],[23,"GPIO 9"],[25,"GPIO 10"],[27,"GPIO 11"],[29,"GPIO 12"],[31,"GPIO 13"],[33,"GPIO 14"],[35,"5V"],[37,"GND"]];
+ const R=[[2,"GND"],[4,"TXD"],[6,"RXD"],[8,"GPIO 41"],[10,"GPIO 40"],[12,"GPIO 39"],[14,"GPIO 45"],[16,"GPIO 2"],[18,"GPIO 42"],[20,"GPIO 1"],[22,"GPIO 21"],[24,"GPIO 3"],[26,"GPIO 19"],[28,"GPIO 20"],[30,"GPIO 0"],[32,"GPIO 18"],[34,"GPIO 17"],[36,"VBAT"],[38,"GND"]];
+ const short={"GPIO 4":"SD CMD","GPIO 5":"SD CLK","GPIO 6":"SD D0","GPIO 46":"Cam PCLK","GPIO 15":"SIO_DAT · jauge SDA","GPIO 16":"SIO_CLK · jauge SCL","GPIO 7":"Cam Y2","GPIO 8":"Cam Y3","GPIO 9":"Cam Y4","GPIO 10":"Cam Y5","GPIO 11":"Cam Y6","GPIO 12":"Cam Y7","GPIO 13":"Cam Y8","GPIO 14":"Cam Y9","GPIO 41":"Cam HREF","GPIO 40":"RI modem ⟷ NeoPixel","GPIO 39":"Cam XCLK","GPIO 45":"DTR modem","GPIO 2":"libre","GPIO 42":"Cam VSYNC","GPIO 1":"libre · ADC1","GPIO 21":"Bouton","GPIO 3":"libre","GPIO 19":"USB D− modem","GPIO 20":"USB D+ modem","GPIO 0":"BOOT","GPIO 18":"UART → modem","GPIO 17":"UART ← modem","TXD":"Série (CH343)","RXD":"Série (CH343)"};
+ const st={fw:["var(--panel)","var(--ok)"],bad:["var(--panel)","var(--crit)"],hw:["var(--hwt)","var(--hw)"],free:["var(--panel)","var(--line)"],pw:["var(--sunk)","var(--line)"]};
+ const s=$("#pinsvg"),els={};
+ el("rect",{x:300,y:14,width:100,height:662,rx:8,fill:"var(--sunk)",stroke:"var(--line)"},s);
+ 
+ function pin(side,i,num,name){
+  const y=24+i*34,info=P[name],[f,c]=st[info[0]],g=el("g",{class:"pin",tabindex:"0",role:"button","aria-label":name+" : "+info[1]},s);
+  const bx=side?410:20,w=270;
+  el("rect",{x:bx,y:y,width:w,height:28,rx:4,fill:f,stroke:c,"stroke-width":info[0]==="bad"?2.5:1.5},g);
+  el("circle",{cx:side?382:318,cy:y+14,r:7,fill:"var(--panel)",stroke:"var(--muted)"},g);
+  const n=el("text",{x:side?366:334,y:y+18,"text-anchor":side?"end":"start",fill:"var(--muted)","font-family":"var(--f-mono)","font-size":"10.5"},g);n.textContent=num;
+  const t1=el("text",{x:side?bx+10:bx+w-10,y:y+18,"text-anchor":side?"start":"end",fill:"var(--ink)","font-family":"var(--f-mono)","font-size":"12","font-weight":"500"},g);t1.textContent=name;
+  if(short[name]){const t2=el("text",{x:side?bx+w-10:bx+10,y:y+18,"text-anchor":side?"end":"start",fill:info[0]==="bad"?"var(--crit)":"var(--muted)","font-family":"var(--f-body)","font-size":"11.5","font-weight":info[0]==="bad"?"600":"400"},g);t2.textContent=short[name]}
+  const go=()=>showPin(name,num);g.addEventListener("click",go);g.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();go()}});
+  els[name+num]=g;
+ }
+ L.forEach((p,i)=>pin(0,i,p[0],p[1]));R.forEach((p,i)=>pin(1,i,p[0],p[1]));
+ const lbl={fw:"Utilisée par le firmware",bad:"Conflit",hw:"Câblée sur la carte, non utilisée",free:"Libre",pw:"Alimentation"};
+ function showPin(name,num){
+  const info=P[name];
+  $("#pininfo").innerHTML=`<span class="eyebrow">Broche ${num} · connecteur ${num%2?1:2}</span><h3 style="font-size:26px">${esc(name)}</h3><div class="chips"><span class="chip" style="border-color:${st[info[0]][1]};color:${info[0]==="bad"?"var(--crit)":"var(--ink)"}">${lbl[info[0]]}</span></div><div class="blk"><h4>Sur la carte</h4><p>${esc(info[1])}</p></div>${info[2]?`<div class="blk ${info[0]==="bad"?"watch":""}"><h4>Dans le firmware</h4><p>${esc(info[2])}</p></div>`:""}`;
+ }
+ showPin("GPIO 40",10);
+})();
+
 /* ═════════════ 8. DÉCISIONS ═════════════ */
 const DEC=[
  ["Une tâche FreeRTOS par module","Isolation : un AT qui attend 60 s n'arrête ni les LED ni le BLE. Chaque module se lit seul, avec ses attentes explicites. La pile restante de chacune est mesurée.","Super-boucle avec millis() : impossible avec des commandes AT bloquantes. Boucle d'événements unique (esp_event) : moins de RAM, mais tout devient machine à états non bloquante. Coût accepté : 88 Ko de piles."],
@@ -990,6 +1075,7 @@ $("#dec").innerHTML=DEC.map(d=>`<div class="decrow"><h3>${esc(d[0])}</h3><div><d
 
 /* ═════════════ 9. À SURVEILLER ═════════════ */
 const WATCH=[
+ ["crit","Élevé","GPIO 40 : bande NeoPixel sur la sortie RI du modem","D'après le brochage Waveshare, le GPIO 40 est relié au signal RI de l'A7670E, une sortie qui bascule à chaque appel et à chaque URC. La bande y est pilotée en sortie par le RMT : deux sorties face à face. Proposition : déplacer la bande sur GPIO 2 (libre sur la V2) et ne plus piloter le GPIO 40, voire le lire plus tard pour réveiller l'ESP32 sur un appel."],
  ["crit","Élevé","Pas d'annulation après une mauvaise mise à jour","Le chargeur d'Arduino n'active pas le rollback et le firmware ne valide pas son démarrage. Un firmware qui démarre mais casse le BLE ne peut être remplacé que par l'USB. Piste : chargeur ESP-IDF avec CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE et esp_ota_mark_app_valid_cancel_rollback() après la première connexion BLE authentifiée."],
  ["warn","Moyen","Le verrou modem peut être tenu 30 s et plus","Pendant un envoi de SMS, GPS, réseau, horloge et haut-parleur expirent (DELAI_DEPASSE). Les URC restent distribuées par la tâche SMS elle-même, rien n'est perdu, mais la position se fige. Acceptable ; à garder en tête si l'on ajoute des données IP."],
  ["warn","Moyen","Port I2C 0 partagé en V2","La jauge (tâche Batterie, Wire) et le SCCB de la caméra (pilote esp32-camera) utilisent le même port. Le SCCB n'est sollicité qu'à l'initialisation et aux réglages, d'où un risque faible, mais un réglage de capteur en cours de route devrait prendre le même verrou que Wire."],
