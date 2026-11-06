@@ -153,5 +153,6 @@ Ces points ne peuvent pas être testés sans la carte :
 
 ## Documentation
 
+- [Anatomie du firmware](docs/architecture_firmware.html) : diagramme interactif (tâches FreeRTOS, files et verrous, séquences, modem, BLE, mémoire). Télécharger le fichier et l'ouvrir dans un navigateur.
 - [Documentation Waveshare ESP32-S3-A7670E-4G](https://docs.waveshare.com/ESP32-S3-A7670E-4G)
 - [FAQ Waveshare](https://docs.waveshare.com/ESP32-S3-A7670E-4G/FAQ)
