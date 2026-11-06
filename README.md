@@ -12,7 +12,7 @@ Boîtier connecté pour moto, basé sur la carte **Waveshare ESP32-S3 A7670E 4G*
 - **Alertes SMS** : à l'allumage (batterie, réseau), dès que le GPS trouve une position (lien Google Maps), puis à chaque déplacement de plus de 5 km
 - **4G** : SMS envoyés et reçus, appels sortants et entrants, toutes les informations du réseau et de la carte SIM
 - **Photo** enregistrée sur la carte SD, un dossier par jour : `/photos/jj-mm-aaaa/jj-mm-aaaa_hh-mm-ss_ESP32-A7670.jpg`
-- **Bande de 14 LED NeoPixel** (GPIO 40) avec 13 animations, changées par le **bouton** (GPIO 21) ou l'application.
+- **Bande de 14 LED NeoPixel** (GPIO 2) avec 13 animations, changées par le **bouton** (GPIO 21) ou l'application.
   L'animation « État des modules » allume un voyant par module (carte SD, modem, réseau 4G, GPS, batterie, caméra, appli) :
   fixe s'il fonctionne, bref éclair toutes les 1/2 s sinon ; les autres LED font un chenillard bleu
 - **Haut-parleur** du modem : nom de l'animation prononcé à chaque changement, son à l'arrivée d'un SMS, sonnerie et voix de l'appelant
@@ -37,7 +37,7 @@ L'application Android est dans [`android/`](android/README.md), le protocole Blu
 | Stockage | Carte micro-SD |
 | Batterie | Li-ion 18650 |
 | Haut-parleur | Sur les pastilles SPK du modem |
-| Bande LED | 14 × WS2812B sur GPIO 40 |
+| Bande LED | 14 × WS2812B sur GPIO 2 |
 | Bouton | Entre GPIO 21 et la masse (GND) |
 | Alimentation moto | 12 V sur l'entrée solaire (cavalier MPPT SET sur 12 V) |
 
@@ -54,7 +54,7 @@ Communes aux deux versions (voir [`include/configuration.h`](include/configurati
 
 | Fonction | GPIO |
 |---|---|
-| Bande NeoPixel | 40 |
+| Bande NeoPixel | 2 |
 | Bouton des animations | 21 |
 | Modem A7670E (UART, sens détecté au démarrage) | 17, 18 |
 | Carte SD (SDMMC 1 bit) | CLK 5, CMD 4, D0 6 (pas de détection de carte câblée) |
@@ -71,7 +71,8 @@ Qui changent entre V1 et V2 (voir [`include/module_carte.h`](include/module_cart
 
 Au démarrage, le module cherche la jauge sur 15/16 (V2), puis sur 3/2 (V1), puis regarde la taille de la PSRAM.
 
-> ⚠️ **Sur la V2, la caméra utilise le GPIO 41** : la bande NeoPixel est donc sur le GPIO 40.
+> ⚠️ **Sur la V2, la caméra utilise le GPIO 41 et le modem le GPIO 40 (signal RI)** : la bande NeoPixel est donc sur le GPIO 2
+> (broche 16 du connecteur 2). Sur la V1, le GPIO 2 est l'horloge de la jauge : le firmware y désactive la bande.
 > Si la bande est un jour remise sur le 41, le firmware la garde et désactive la caméra.
 
 ---
@@ -142,7 +143,7 @@ Ces points ne peuvent pas être testés sans la carte :
 - **Modem** : la liaison UART 17/18 (le sens est détecté automatiquement) ; s'il ne démarre pas seul, renseigner `BROCHE_ALLUMAGE_MODEM`.
 - **Haut-parleur** : branché sur les pastilles SPK du modem ; la voix de synthèse (`AT+CTTS`) n'existe pas sur toutes les variantes de l'A7670E
   (la variante « LNXY-UBL » n'a pas du tout de voix). L'application affiche si le modem sait téléphoner.
-- **Caméra** : à essayer maintenant que la bande NeoPixel est sur le GPIO 40.
+- **Caméra** : à essayer maintenant que la bande NeoPixel n'est plus sur le GPIO 41.
 - **Bouton** : doit relier le GPIO 21 à la masse (le firmware active la résistance de tirage interne).
 - **Source d'alimentation** : la carte ne permet pas de mesurer directement le 12 V ou l'USB ; la source est déduite de la charge de la batterie.
   Pour une mesure exacte, câbler un pont diviseur vers une entrée analogique (`BROCHE_MESURE_12V`, `BROCHE_MESURE_USB`).

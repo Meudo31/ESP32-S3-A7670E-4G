@@ -2,7 +2,7 @@
 #define MODULE_NEOPIXELS_H
 
 /* ══════════════════════════════════════════════════════════════════════════════
-   MODULE NEOPIXELS : bande de 14 LED WS2812B branchée sur GPIO 40.
+   MODULE NEOPIXELS : bande de 14 LED WS2812B branchée sur GPIO 2 (BROCHE_BANDE_NEOPIXELS).
    Treize animations au choix, dont « État des modules » (un voyant par module)
    et « Toutes LED éteintes ». On change d'animation avec le bouton (GPIO 21) ou
    depuis l'application. À chaque changement :
