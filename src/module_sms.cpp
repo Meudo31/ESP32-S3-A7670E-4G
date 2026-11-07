@@ -4,6 +4,7 @@
 #include "module_sms.h"
 #include "module_appli.h"
 #include "module_carte_sd.h"
+#include "module_commandes_sms.h"
 #include "module_haut_parleur.h"
 #include "module_horloge.h"
 #include "module_journal.h"
@@ -19,7 +20,7 @@ struct DemandeSMS {
     TravailSMS travail;
     int        numeroDansLaSim;
     char       numero[24];
-    char       texte[480];
+    char       texte[1024];   // un texte plus long que 160 caractères part en plusieurs SMS
 };
 
 QueueHandle_t fileDuModuleSMS = nullptr;
@@ -152,6 +153,9 @@ void traiterUnNouveauSMS(int numeroDansLaSim) {
     evenement["date"] = sms.date;
     evenement["txt"]  = sms.texte;
     publierUnEvenementVersLAppli(evenement);
+
+    // « Photo », « Gps », « Etat »... : la tâche des commandes s'en occupe.
+    transmettreUnSMSAuxCommandes(sms.expediteur, sms.texte);
 }
 
 // Appelée par le module modem pour « +CMTI: "SM",3 » (ne doit pas envoyer de commande AT).
@@ -176,7 +180,7 @@ void tacheSMS(void*) {
 
 bool demanderLEnvoiDUnSMS(const String& numero, const String& texte) {
     if (numero.isEmpty() || texte.isEmpty() || fileDuModuleSMS == nullptr) return false;
-    // La demande est grande (texte de 480 octets) : elle est préparée dans le tas plutôt que sur la pile.
+    // La demande est grande (texte de 1 Ko) : elle est préparée dans le tas plutôt que sur la pile.
     DemandeSMS* demande = (DemandeSMS*)calloc(1, sizeof(DemandeSMS));
     if (demande == nullptr) return false;
     demande->travail = TravailSMS::ENVOYER;

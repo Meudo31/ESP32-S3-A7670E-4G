@@ -42,7 +42,7 @@ Chaque étape s'appuie sur les précédentes. Colonne "OK si" = ce que tu dois v
 | 8 | Heure réseau | `AT+CCLK?` donne la bonne date/heure, recopiée dans l'heure système |
 | 9 | Envoi SMS | Tu reçois un SMS de test |
 | 10 | Réception SMS + filtrage | Un SMS d'un numéro autorisé est accepté, un inconnu est rejeté |
-| 11 | Commandes SMS | `GPS`, `Status`, `Reboot` répondent (après le GPS) |
+| 11 | Commandes SMS | Depuis le numéro des alertes : `Gps`, `Etat`, `Aide` répondent ; un autre numéro est ignoré |
 | 12 | Appel voix | La carte décroche / raccroche / appelle (module_appel) |
 | 13 | Data 4G | APN configuré, IP obtenue, requête HTTP GET réussie ; compteur de data |
 
@@ -58,7 +58,7 @@ Chaque étape s'appuie sur les précédentes. Colonne "OK si" = ce que tu dois v
 |---|---|---|
 | 17 | Capture | Photo JPEG en PSRAM (après validation des broches V2) |
 | 18 | Photo sur SD | Fichier lisible sur PC, avec GPS/date dans l'EXIF |
-| 19 | MMS | Commande SMS `Photo` → MMS reçu |
+| 19 | Photo par SMS | Commande SMS `Photo` → SMS avec un lien vers la photo (pas de MMS sur l'A7670E) |
 
 ### Bloc 5 : connexions sans fil
 | # | Fonction | OK si |

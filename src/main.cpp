@@ -19,6 +19,8 @@
      réseau 4G            Reseau 4G      SIM, opérateur, signal, cellule
      GPS                  GPS            position, vitesse, satellites
      SMS                  SMS            envoi et réception
+     commandes SMS        Commandes SMS  « Photo », « Gps », « Etat », « Aide » reçus par SMS
+     envoi Internet       (aucune)       dépôt d'une photo sur Internet (lien envoyé par SMS)
      appels               Appels         passer, décrocher, raccrocher
      haut-parleur         Haut-parleur   annonces, sons, sonnerie
      explorateur          Fichiers       fichiers de la carte SD pour l'appli
@@ -36,6 +38,8 @@
 #include "module_camera.h"
 #include "module_carte.h"
 #include "module_carte_sd.h"
+#include "module_commandes_sms.h"
+#include "module_envoi_internet.h"
 #include "module_explorateur_fichiers.h"
 #include "module_gps.h"
 #include "module_haut_parleur.h"
@@ -99,6 +103,8 @@ void setup() {
     demarrer("Appels",       demarrerModuleAppels);
     demarrer("Haut-parleur", demarrerModuleHautParleur);
     demarrer("Alertes SMS",  demarrerModuleAlertesSMS);
+    demarrer("Envoi Internet", demarrerModuleEnvoiInternet);
+    demarrer("Commandes SMS",  demarrerModuleCommandesSMS);
 
     // 5. La liaison avec l'application Android.
     demarrer("Explorateur de fichiers", demarrerModuleExplorateurFichiers);

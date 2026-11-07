@@ -47,6 +47,15 @@ ResultatAT envoyerCommandeAT(const String& commande, String* reponse = nullptr, 
 ResultatAT envoyerCommandeATAvecDonnees(const String& commande, const uint8_t* donnees, size_t taille,
                                         bool terminerParCtrlZ, String* reponse = nullptr, uint32_t delaiMaximumMs = 20000);
 
+// Pour les commandes qui attendent la ligne « DOWNLOAD » avant les données (AT+HTTPDATA).
+ResultatAT envoyerCommandeATAvecTelechargement(const String& commande, const uint8_t* donnees, size_t taille,
+                                               uint32_t delaiMaximumMs = 60000);
+
+// Pour les commandes dont les données arrivent APRÈS le OK (AT+HTTPREAD) : lit jusqu'à la ligne
+// qui commence par « debutDeLaDerniereLigne » (ex. "+HTTPREAD: 0"), qui n'est pas mise dans la réponse.
+ResultatAT envoyerCommandeATJusquALaLigne(const String& commande, const char* debutDeLaDerniereLigne, String* reponse,
+                                          uint32_t delaiMaximumMs = 10000);
+
 // Pour enchaîner plusieurs commandes sans qu'une autre tâche ne s'intercale.
 bool prendreLeModem(uint32_t attenteMaximumMs = 10000);
 void rendreLeModem();

@@ -23,12 +23,17 @@ struct PositionGPS {
     time_t   heureUTC;              // heure donnée par les satellites
     float    vitesseMaximumKmh;     // depuis le démarrage
     uint32_t miseAJourMs;
+    uint32_t dernierePositionValideMs;   // 0 = jamais de position depuis le démarrage.
+                                         // Sans position, latitude et longitude gardent la dernière position connue.
 };
 
 PositionGPS positionGPS();
 
 // Demande une nouvelle position tout de suite.
 void actualiserLaPositionGPS();
+
+// "https://maps.google.com/?q=48.818724,2.076142"
+String lienGoogleMaps(const PositionGPS& position);
 
 void decrireLaPositionGPS(JsonDocument& document);
 

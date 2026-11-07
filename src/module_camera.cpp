@@ -13,6 +13,7 @@
 namespace {
 
 TaskHandle_t  tacheDeLaCamera = nullptr;
+SemaphoreHandle_t verrouDeLaCamera = nullptr;   // une seule prise de vue à la fois (appli ou SMS)
 volatile bool cameraPrete     = false;
 const char*   etatActuel      = "pas encore démarrée";
 uint32_t      numeroDePhotoSansDate = 0;
@@ -129,8 +130,24 @@ void tacheCamera(void*) {
     if (!cameraPrete) ecrireDansLeJournal("[CAMERA] Caméra %s.", etatActuel);
     for (;;) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);   // attend une demande de photo
+        xSemaphoreTake(verrouDeLaCamera, portMAX_DELAY);
         prendreEtEnregistrerUnePhoto();
+        xSemaphoreGive(verrouDeLaCamera);
     }
+}
+
+// Prend une image à la taille demandée. La caméra garde ensuite cette taille : l'appelant la remet.
+camera_fb_t* prendreUneImageEn(framesize_t taille) {
+    sensor_t* capteur = esp_camera_sensor_get();
+    if (capteur == nullptr) return nullptr;
+    capteur->set_framesize(capteur, taille);
+    // Les images déjà en mémoire ont l'ancienne taille, et le réglage automatique d'exposition
+    // a besoin de quelques images : on en jette deux.
+    for (int image = 0; image < 2; image++) {
+        camera_fb_t* ancienne = esp_camera_fb_get();
+        if (ancienne) esp_camera_fb_return(ancienne);
+    }
+    return esp_camera_fb_get();
 }
 
 } // namespace
@@ -145,6 +162,53 @@ bool demanderUnePhoto() {
     return true;
 }
 
+bool prendreUnePhotoAEnvoyer(PhotoAEnvoyer& photo, size_t tailleMaximum) {
+    photo = { nullptr, 0, "", "" };
+    if (!cameraPrete) {
+        photo.erreur = String("camera ") + etatActuel;
+        return false;
+    }
+    if (xSemaphoreTake(verrouDeLaCamera, pdMS_TO_TICKS(20 * UNE_SECONDE_MS)) != pdTRUE) {
+        photo.erreur = "camera occupee";
+        return false;
+    }
+    sensor_t* capteur = esp_camera_sensor_get();
+    const framesize_t tailleHabituelle = capteur ? (framesize_t)capteur->status.framesize : FRAMESIZE_SVGA;
+
+    camera_fb_t* image = prendreUneImageEn(FRAMESIZE_SVGA);
+    if (image != nullptr && image->len > tailleMaximum) {
+        esp_camera_fb_return(image);
+        image = prendreUneImageEn(FRAMESIZE_VGA);
+    }
+
+    if (image == nullptr) {
+        photo.erreur = "la camera n'a pas renvoye d'image";
+    } else if (image->len > tailleMaximum) {
+        photo.erreur = String("photo trop grosse (") + image->len + " octets)";
+    } else {
+        photo.jpeg = (uint8_t*)(psramFound() ? ps_malloc(image->len) : malloc(image->len));
+        if (photo.jpeg == nullptr) {
+            photo.erreur = "memoire insuffisante";
+        } else {
+            memcpy(photo.jpeg, image->buf, image->len);
+            photo.taille = image->len;
+            if (carteSDMontee()) {
+                const String chemin = cheminDeLaNouvellePhoto();
+                if (ecrireUnFichier(chemin.c_str(), image->buf, image->len)) photo.chemin = chemin;
+            }
+        }
+    }
+    if (image) esp_camera_fb_return(image);
+    if (capteur) capteur->set_framesize(capteur, tailleHabituelle);
+    xSemaphoreGive(verrouDeLaCamera);
+
+    ecrireDansLeJournal("[CAMERA] Photo pour envoi : %s (%u octets) %s.", photo.jpeg ? "prise" : "ÉCHEC",
+                        (unsigned)photo.taille, photo.chemin.length() ? photo.chemin.c_str() : photo.erreur.c_str());
+    return photo.jpeg != nullptr;
+}
+
 bool demarrerModuleCamera() {
+    verrouDeLaCamera = xSemaphoreCreateMutex();
+    if (verrouDeLaCamera == nullptr) return false;
     return creerTacheSurveillee(tacheCamera, "Camera", 6144, PRIORITE_NORMALE, COEUR_TRAITEMENTS, &tacheDeLaCamera);
 }
