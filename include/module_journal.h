@@ -24,6 +24,9 @@ void preparerLeJournal();
 // Écrit une ligne dans le journal, comme printf. Utilisable depuis n'importe quelle tâche.
 void ecrireDansLeJournal(const char* format, ...) __attribute__((format(printf, 1, 2)));
 
+// Les « nombre » dernières lignes du journal (10 au plus), une par ligne, la plus récente à la fin.
+String dernieresLignesDuJournal(int nombre);
+
 // Lance la tâche qui écrit les lignes sur le port série, la carte SD et l'application.
 bool demarrerModuleJournal();
 

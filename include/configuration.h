@@ -10,7 +10,7 @@
 #include <Arduino.h>
 
 // ─── Version du firmware (affichée dans l'application). À augmenter à chaque nouvelle version. ───
-#define VERSION_DU_FIRMWARE "0.4.4"
+#define VERSION_DU_FIRMWARE "0.4.5"
 
 // ─── Nom du module dans les fichiers (photos) et en Bluetooth ───
 #define NOM_DU_MODULE_DANS_LES_FICHIERS "ESP32-A7670"
@@ -39,6 +39,15 @@
 // Mesure de la présence du 5 V USB par un pont diviseur (ex. 10 kΩ / 10 kΩ).
 #define BROCHE_MESURE_USB               -1
 #define RAPPORT_PONT_DIVISEUR_USB       2.0f
+
+// ─── Commandes par SMS (« Photo », « Gps », « Etat ») ───
+// Seul le numéro des alertes SMS (réglé dans l'application) peut envoyer des commandes.
+// La photo est déposée sur un hébergement temporaire (Litterbox, gratuit, sans compte) et le SMS
+// contient le lien. Le lien est public mais impossible à deviner, et il s'efface tout seul.
+#define ADRESSE_DEPOT_DES_PHOTOS        "https://litterbox.catbox.moe/resources/internals/api.php"
+#define DUREE_DE_VIE_DES_PHOTOS         "24h"        // 1h, 12h, 24h ou 72h
+#define TAILLE_MAXIMUM_PHOTO_PAR_SMS    (140 * 1024) // octets (limite de AT+HTTPDATA et du forfait data)
+#define LIGNES_DU_JOURNAL_DANS_ETAT     5
 
 // ─── Fuseau horaire (France, heure d'été automatique) ───
 #define FUSEAU_HORAIRE "CET-1CEST,M3.5.0,M10.5.0/3"

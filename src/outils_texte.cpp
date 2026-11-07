@@ -147,3 +147,63 @@ String nettoyerPourCommandeAT(const String& texte) {
     resultat.replace("\n", " ");
     return resultat;
 }
+
+namespace {
+
+// Équivalent sans accent d'un caractère Latin-1 (U+00C0 à U+00FF), ou nullptr.
+const char* lettreSansAccent(uint32_t pointDeCode) {
+    static const char* const TABLE[64] = {
+        "A", "A", "A", "A", "A", "A", "AE", "C", "E", "E", "E", "E", "I", "I", "I", "I",   // C0..CF
+        "D", "N", "O", "O", "O", "O", "O", "x", "O", "U", "U", "U", "U", "Y", "", "ss",    // D0..DF
+        "a", "a", "a", "a", "a", "a", "ae", "c", "e", "e", "e", "e", "i", "i", "i", "i",   // E0..EF
+        "d", "n", "o", "o", "o", "o", "o", "/", "o", "u", "u", "u", "u", "y", "", "y",     // F0..FF
+    };
+    if (pointDeCode >= 0xC0 && pointDeCode <= 0xFF) return TABLE[pointDeCode - 0xC0];
+    switch (pointDeCode) {
+        case 0x0152: return "OE";
+        case 0x0153: return "oe";
+        case 0x00AB: case 0x00BB: case 0x201C: case 0x201D: return "\"";
+        case 0x2018: case 0x2019: return "'";
+        case 0x2013: case 0x2014: case 0x2500: case 0x2550: return "-";
+        case 0x2026: return "...";
+        case 0x00B0: return " deg";
+        case 0x00A0: case 0x202F: return " ";
+        case 0x2192: return "->";
+        default:     return nullptr;
+    }
+}
+
+} // namespace
+
+String texteSansAccentPourSMS(const String& texteUtf8) {
+    String resultat;
+    resultat.reserve(texteUtf8.length());
+    const uint8_t* octets = (const uint8_t*)texteUtf8.c_str();
+    const size_t   taille = texteUtf8.length();
+    size_t position = 0;
+    while (position < taille) {
+        const uint8_t premier = octets[position];
+        if (premier < 0x80) {
+            switch ((char)premier) {
+                case '[': case '{': resultat += '('; break;
+                case ']': case '}': resultat += ')'; break;
+                case '_': case '~': case '^': case '|': case '\\': resultat += '-'; break;
+                case '\r': break;
+                default: resultat += (char)premier; break;
+            }
+            position++;
+            continue;
+        }
+        uint32_t pointDeCode = 0;
+        size_t   longueur = 1;
+        if ((premier & 0xE0) == 0xC0)      { pointDeCode = premier & 0x1F; longueur = 2; }
+        else if ((premier & 0xF0) == 0xE0) { pointDeCode = premier & 0x0F; longueur = 3; }
+        else if ((premier & 0xF8) == 0xF0) { pointDeCode = premier & 0x07; longueur = 4; }
+        if (position + longueur > taille) break;
+        for (size_t suite = 1; suite < longueur; suite++) pointDeCode = (pointDeCode << 6) | (octets[position + suite] & 0x3F);
+        position += longueur;
+        const char* remplacement = lettreSansAccent(pointDeCode);
+        if (remplacement != nullptr) resultat += remplacement;   // les autres symboles (émojis...) sont supprimés
+    }
+    return resultat;
+}

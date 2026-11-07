@@ -27,6 +27,11 @@ bool texteEnAsciiSimple(const String& texteUtf8);
 // Nombre de caractères (et non d'octets) d'un texte UTF-8.
 size_t nombreDeCaracteres(const String& texteUtf8);
 
+// Rend un texte sûr pour un SMS « sans accent » (160 caractères par SMS) :
+// accents retirés (é → e, ç → c, œ → oe), guillemets « » → ", tirets longs → -,
+// caractères absents de l'alphabet GSM ([ ] { } _ ~ ^ | \\) remplacés, autres symboles supprimés.
+String texteSansAccentPourSMS(const String& texteUtf8);
+
 // Découpe une ligne « a,"b,c",d » en champs, sans couper à l'intérieur des guillemets. Les guillemets sont retirés.
 int decouperLesChamps(const String& ligne, String champs[], int nombreMaximumDeChamps);
 

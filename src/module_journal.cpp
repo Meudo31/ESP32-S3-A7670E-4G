@@ -18,6 +18,20 @@ const size_t   TAILLE_DU_TAMPON_AVANT_ECRITURE = 2048;
 const uint32_t DELAI_MAXIMUM_AVANT_ECRITURE_MS = 5 * UNE_SECONDE_MS;
 
 QueueHandle_t fileDesLignes = nullptr;
+
+// Les dernières lignes restent en mémoire (pour la commande SMS « Etat »).
+const int         NOMBRE_DE_LIGNES_GARDEES = 10;
+String            dernieresLignes[NOMBRE_DE_LIGNES_GARDEES];
+int               prochaineLigneGardee = 0;
+SemaphoreHandle_t verrouDesDernieresLignes = nullptr;
+
+void garderLaLigne(const String& ligne) {
+    if (verrouDesDernieresLignes == nullptr) return;
+    xSemaphoreTake(verrouDesDernieresLignes, portMAX_DELAY);
+    dernieresLignes[prochaineLigneGardee] = ligne;
+    prochaineLigneGardee = (prochaineLigneGardee + 1) % NOMBRE_DE_LIGNES_GARDEES;
+    xSemaphoreGive(verrouDesDernieresLignes);
+}
 String        tamponPourLaCarteSD;
 uint32_t      derniereEcritureSurLaCarte = 0;
 
@@ -43,6 +57,7 @@ void tacheJournal(void*) {
             String ligneHorodatee = heurePourLeJournal() + "  " + ligne.texte;
             Serial.println(ligneHorodatee);
             transmettreUneLigneDuJournalALAppli(ligneHorodatee.c_str());
+            garderLaLigne(ligneHorodatee);
             tamponPourLaCarteSD += ligneHorodatee;
             tamponPourLaCarteSD += '\n';
         }
@@ -56,6 +71,22 @@ void tacheJournal(void*) {
 
 void preparerLeJournal() {
     if (fileDesLignes == nullptr) fileDesLignes = xQueueCreate(CAPACITE_DE_LA_FILE, sizeof(LigneDuJournal));
+    if (verrouDesDernieresLignes == nullptr) verrouDesDernieresLignes = xSemaphoreCreateMutex();
+}
+
+String dernieresLignesDuJournal(int nombre) {
+    String texte;
+    if (verrouDesDernieresLignes == nullptr) return texte;
+    if (nombre > NOMBRE_DE_LIGNES_GARDEES) nombre = NOMBRE_DE_LIGNES_GARDEES;
+    xSemaphoreTake(verrouDesDernieresLignes, portMAX_DELAY);
+    for (int age = nombre; age >= 1; age--) {   // de la plus ancienne à la plus récente
+        const String& ligne = dernieresLignes[(prochaineLigneGardee - age + NOMBRE_DE_LIGNES_GARDEES) % NOMBRE_DE_LIGNES_GARDEES];
+        if (ligne.isEmpty()) continue;
+        texte += ligne;
+        texte += '\n';
+    }
+    xSemaphoreGive(verrouDesDernieresLignes);
+    return texte;
 }
 
 void ecrireDansLeJournal(const char* format, ...) {

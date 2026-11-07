@@ -45,12 +45,6 @@ double distanceEnKm(double lat1, double lon1, double lat2, double lon2) {
     return 2 * rayonDeLaTerreKm * atan2(sqrt(a), sqrt(1 - a));
 }
 
-String lienMaps(const PositionGPS& p) {
-    char lien[80];
-    snprintf(lien, sizeof(lien), "https://maps.google.com/?q=%.6f,%.6f", p.latitude, p.longitude);
-    return lien;
-}
-
 bool envoyer(const String& texte) {
     if (!actives || numero.length() < 4) return false;
     const bool demande = demanderLEnvoiDUnSMS(numero, texte);
@@ -77,7 +71,7 @@ String messageDeDemarrage() {
     texte += String("Reseau ") + reseau.operateur + " " + reseau.technologie + ", signal " + reseau.signalPourcent + " %.\n";
     texte += String("Redemarrage : ") + raisonDuDernierRedemarrage() + " (n. " + nombreDeDemarrages() + ").\n";
     const PositionGPS p = positionGPS();
-    texte += p.positionValide ? String("Position : ") + lienMaps(p) : String("GPS : position en cours de recherche.");
+    texte += p.positionValide ? String("Position : ") + lienGoogleMaps(p) : String("GPS : position en cours de recherche.");
     return texte;
 }
 
@@ -107,7 +101,7 @@ void tacheDesAlertes(void*) {
             if (!positionConnue && perteLongue) {
                 char texte[200];
                 snprintf(texte, sizeof(texte), "Moto ESP32 : position GPS trouvee (%d satellites).\n%s",
-                         p.satellitesUtilises, lienMaps(p).c_str());
+                         p.satellitesUtilises, lienGoogleMaps(p).c_str());
                 if (envoyer(texte)) {
                     latitudeEnvoyee = p.latitude; longitudeEnvoyee = p.longitude; referenceConnue = true;
                 }
@@ -116,7 +110,7 @@ void tacheDesAlertes(void*) {
                 if (distance > DISTANCE_ENTRE_DEUX_ALERTES_KM) {
                     char texte[200];
                     snprintf(texte, sizeof(texte), "Moto ESP32 : deplacement de %.1f km, %.0f km/h.\n%s",
-                             distance, p.vitesseKmh, lienMaps(p).c_str());
+                             distance, p.vitesseKmh, lienGoogleMaps(p).c_str());
                     if (envoyer(texte)) { latitudeEnvoyee = p.latitude; longitudeEnvoyee = p.longitude; }
                 }
             } else {

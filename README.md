@@ -10,6 +10,7 @@ Boîtier connecté pour moto, basé sur la carte **Waveshare ESP32-S3 A7670E 4G*
 
 - **GPS** (GPS, GLONASS, Galileo, BeiDou) par le modem A7670E : position, vitesse, altitude, cap, satellites, précision
 - **Alertes SMS** : à l'allumage (batterie, réseau), dès que le GPS trouve une position (lien Google Maps), puis à chaque déplacement de plus de 5 km
+- **Commandes par SMS** (depuis le numéro des alertes uniquement) : « Photo » renvoie le lien d'une photo (déposée 24 h sur litterbox.catbox.moe, le modem ne sait pas envoyer de MMS), « Gps » la position avec un lien Google Maps, « Etat » la batterie, le modem, le GPS et les 5 dernières lignes du journal, « Aide » la liste
 - **4G** : SMS envoyés et reçus, appels sortants et entrants, toutes les informations du réseau et de la carte SIM
 - **Photo** enregistrée sur la carte SD, un dossier par jour : `/photos/jj-mm-aaaa/jj-mm-aaaa_hh-mm-ss_ESP32-A7670.jpg`
 - **Bande de 14 LED NeoPixel** (GPIO 2) avec 13 animations, changées par le **bouton** (GPIO 21) ou l'application.
@@ -95,6 +96,8 @@ src/
 ├── module_reseau_4g.cpp             Réseau 4G, carte SIM, signal
 ├── module_sms.cpp                   Envoi et réception des SMS
 ├── module_alertes_sms.cpp           SMS automatiques : allumage, position trouvée, déplacement de 5 km
+├── module_commandes_sms.cpp         Commandes reçues par SMS : Photo, Gps, Etat, Aide
+├── module_envoi_internet.cpp        Dépôt d'une photo sur Internet par le client HTTP du modem
 ├── module_appels.cpp                Appels entrants et sortants
 ├── module_haut_parleur.cpp          Voix de synthèse, sons, sonnerie, volume
 ├── module_gps.cpp                   Position GNSS
@@ -149,6 +152,7 @@ Ces points ne peuvent pas être testés sans la carte :
   Pour une mesure exacte, câbler un pont diviseur vers une entrée analogique (`BROCHE_MESURE_12V`, `BROCHE_MESURE_USB`).
 - **GPS** : l'ordre des champs de `AT+CGNSSINFO` (nombre de satellites par constellation) peut varier selon la version du modem.
 - **Bluetooth** : la vitesse de téléchargement des fichiers et des photos.
+- **Commande SMS « Photo »** : le client HTTPS du modem (`AT+HTTPINIT`, `AT+HTTPDATA`, `AT+HTTPACTION`) et la connexion data du forfait ; en cas d'échec, le SMS de réponse donne la raison (APN, DNS, HTTPS...).
 
 ---
 

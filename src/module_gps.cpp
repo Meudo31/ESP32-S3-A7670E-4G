@@ -116,6 +116,7 @@ void tacheGPS(void*) {
         if (envoyerCommandeAT("AT+CGNSSINFO", &reponse, 2000) == ResultatAT::OK
             && lireLaReponseDuGPS(reponse, nouvellePosition)) {
             nouvellePosition.miseAJourMs = millis();
+            if (nouvellePosition.positionValide) nouvellePosition.dernierePositionValideMs = nouvellePosition.miseAJourMs;
             xSemaphoreTake(verrouDeLaPosition, portMAX_DELAY);
             positionActuelle = nouvellePosition;
             xSemaphoreGive(verrouDeLaPosition);
@@ -155,6 +156,12 @@ PositionGPS positionGPS() {
 
 void actualiserLaPositionGPS() {
     if (tacheDuGPS != nullptr) xTaskNotifyGive(tacheDuGPS);
+}
+
+String lienGoogleMaps(const PositionGPS& position) {
+    char lien[80];
+    snprintf(lien, sizeof(lien), "https://maps.google.com/?q=%.6f,%.6f", position.latitude, position.longitude);
+    return lien;
 }
 
 void decrireLaPositionGPS(JsonDocument& document) {

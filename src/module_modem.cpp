@@ -231,30 +231,24 @@ ResultatAT envoyerCommandeAT(const char* commande, String* reponse, uint32_t del
     return envoyerCommandeAT(String(commande), reponse, delaiMaximumMs);
 }
 
-ResultatAT envoyerCommandeATAvecDonnees(const String& commande, const uint8_t* donnees, size_t taille,
-                                        bool terminerParCtrlZ, String* reponse, uint32_t delaiMaximumMs) {
-    if (!modemTrouve) return ResultatAT::MODEM_ABSENT;
-    if (!prendreLeModem(delaiMaximumMs)) return ResultatAT::DELAI_DEPASSE;
-    traiterLesLignesEnAttente();
-    if (reponse != nullptr) *reponse = "";
-    liaisonModem.print(commande);
-    liaisonModem.print("\r");
+namespace {
 
-    // Attente de l'invite « > » (elle n'est pas suivie d'un retour à la ligne).
-    bool inviteRecue = false;
+// Attend l'invite du modem avant l'envoi des données :
+//   - « > » sans retour à la ligne (envoi de SMS) ;
+//   - la ligne « DOWNLOAD » (AT+HTTPDATA, copie de fichier).
+// À appeler en tenant le verrou du modem.
+ResultatAT attendreLInvite(bool inviteDOWNLOAD, uint32_t delaiMaximumMs) {
     const uint32_t debut = millis();
-    while (!inviteRecue && millis() - debut < 5000) {
+    while (millis() - debut < delaiMaximumMs) {
         while (liaisonModem.available()) {
             const char caractere = (char)liaisonModem.read();
-            if (caractere == '>') { inviteRecue = true; break; }
+            if (!inviteDOWNLOAD && caractere == '>') return ResultatAT::OK;
             if (caractere == '\n') {
                 ResultatAT resultat;
                 String ligne = ligneEnCoursDeLecture;
                 ligneEnCoursDeLecture = "";
-                if (estUneFinDeReponse(ligne, resultat) && resultat == ResultatAT::ERREUR) {
-                    rendreLeModem();
-                    return ResultatAT::ERREUR;
-                }
+                if (inviteDOWNLOAD && ligne == "DOWNLOAD") return ResultatAT::OK;
+                if (estUneFinDeReponse(ligne, resultat) && resultat == ResultatAT::ERREUR) return ResultatAT::ERREUR;
                 if (!ligne.isEmpty()) distribuerSiCEstUneNotification(ligne);
             } else if (caractere != '\r') {
                 ligneEnCoursDeLecture += caractere;
@@ -262,15 +256,71 @@ ResultatAT envoyerCommandeATAvecDonnees(const String& commande, const uint8_t* d
         }
         vTaskDelay(pdMS_TO_TICKS(5));
     }
-    if (!inviteRecue) {
-        liaisonModem.write((uint8_t)0x1B);   // Échap : annule la saisie
+    return ResultatAT::DELAI_DEPASSE;
+}
+
+ResultatAT envoyerAvecInvite(const String& commande, bool inviteDOWNLOAD, const uint8_t* donnees, size_t taille,
+                             bool terminerParCtrlZ, String* reponse, uint32_t delaiMaximumMs) {
+    if (!modemTrouve) return ResultatAT::MODEM_ABSENT;
+    if (!prendreLeModem(delaiMaximumMs)) return ResultatAT::DELAI_DEPASSE;
+    traiterLesLignesEnAttente();
+    if (reponse != nullptr) *reponse = "";
+    liaisonModem.print(commande);
+    liaisonModem.print("\r");
+
+    const ResultatAT invite = attendreLInvite(inviteDOWNLOAD, 5000);
+    if (invite != ResultatAT::OK) {
+        if (invite == ResultatAT::DELAI_DEPASSE && !inviteDOWNLOAD) liaisonModem.write((uint8_t)0x1B);   // Échap : annule la saisie
         rendreLeModem();
-        return ResultatAT::DELAI_DEPASSE;
+        return invite;
     }
     ligneEnCoursDeLecture = "";
-    liaisonModem.write(donnees, taille);
+    // Envoi par morceaux : l'UART envoie environ 11 Ko par seconde à 115200 bauds.
+    const size_t MORCEAU = 4096;
+    for (size_t envoye = 0; envoye < taille; envoye += MORCEAU) {
+        liaisonModem.write(donnees + envoye, min(MORCEAU, taille - envoye));
+    }
     if (terminerParCtrlZ) liaisonModem.write((uint8_t)0x1A);
     const ResultatAT resultat = attendreLaReponse(commande, reponse, delaiMaximumMs);
+    rendreLeModem();
+    return resultat;
+}
+
+} // namespace
+
+ResultatAT envoyerCommandeATAvecDonnees(const String& commande, const uint8_t* donnees, size_t taille,
+                                        bool terminerParCtrlZ, String* reponse, uint32_t delaiMaximumMs) {
+    return envoyerAvecInvite(commande, false, donnees, taille, terminerParCtrlZ, reponse, delaiMaximumMs);
+}
+
+ResultatAT envoyerCommandeATAvecTelechargement(const String& commande, const uint8_t* donnees, size_t taille,
+                                               uint32_t delaiMaximumMs) {
+    return envoyerAvecInvite(commande, true, donnees, taille, false, nullptr, delaiMaximumMs);
+}
+
+ResultatAT envoyerCommandeATJusquALaLigne(const String& commande, const char* debutDeLaDerniereLigne, String* reponse,
+                                          uint32_t delaiMaximumMs) {
+    if (!modemTrouve) return ResultatAT::MODEM_ABSENT;
+    if (!prendreLeModem(delaiMaximumMs + 5000)) return ResultatAT::DELAI_DEPASSE;
+    const uint32_t debut = millis();
+    traiterLesLignesEnAttente();
+    if (reponse != nullptr) *reponse = "";
+    liaisonModem.print(commande);
+    liaisonModem.print("\r");
+    ResultatAT resultat = attendreLaReponse(commande, reponse, delaiMaximumMs);
+    if (resultat == ResultatAT::OK) {
+        // Les données arrivent après le OK : on lit jusqu'à la ligne de fin.
+        resultat = ResultatAT::DELAI_DEPASSE;
+        String ligne;
+        while (millis() - debut < delaiMaximumMs) {
+            if (!lireUneLigne(ligne, 20)) continue;
+            if (ligne.startsWith(debutDeLaDerniereLigne)) { resultat = ResultatAT::OK; break; }
+            if (reponse != nullptr) {
+                *reponse += ligne;
+                *reponse += '\n';
+            }
+        }
+    }
     rendreLeModem();
     return resultat;
 }
