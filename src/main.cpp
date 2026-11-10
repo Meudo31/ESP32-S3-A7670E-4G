@@ -25,6 +25,8 @@
      bus CAN              Bus CAN        écoute des trames de la moto (écoute seule)
      mise à jour          Mise a jour    nouveau firmware envoyé par l'appli
      appli                Appli BLE      liaison Bluetooth avec l'application Android
+     synchro              Synchro        au Wi-Fi de la maison : logs, GPS → Supabase,
+                                         photos → Google Photos, trames CAN → Google Drive
    ══════════════════════════════════════════════════════════════════════════════ */
 
 #include <Arduino.h>
@@ -51,6 +53,7 @@
 #include "module_reseau_4g.h"
 #include "module_sms.h"
 #include "module_systeme.h"
+#include "module_synchro.h"
 
 namespace {
 
@@ -108,6 +111,7 @@ void setup() {
     demarrer("Explorateur de fichiers", demarrerModuleExplorateurFichiers);
     demarrer("Mise à jour",             demarrerModuleMiseAJour);
     demarrer("Wi-Fi",                   demarrerModuleWifi);
+    demarrer("Synchro maison",          demarrerModuleSynchro);
     demarrer("Appli Bluetooth",         demarrerModuleAppli);
 
     ecrireDansLeJournal("[DEMARRAGE] Terminé : %d tâche(s) lancée(s), %d module(s) en échec.",

@@ -345,8 +345,10 @@ void ouvrirUnNouveauFichier() {
                                    : String("demarrage-") + nombreDeDemarrages() + "_" + (millis() / 1000) + "s";
     String chemin = dossier + "/" + nom + ".csv";
     creerUnDossier(dossier.c_str());
-    char entete[96];
-    snprintf(entete, sizeof(entete), "# bus CAN %d kbit/s, firmware %s\nms;id;type;dlc;donnees\n", vitesseActuelle, VERSION_DU_FIRMWARE);
+    // « # debut <secondes UTC> <millis()> » : permet de dater chaque trame (module_synchro).
+    char entete[160];
+    snprintf(entete, sizeof(entete), "# bus CAN %d kbit/s, firmware %s\n# debut %ld %lu\nms;id;type;dlc;donnees\n", vitesseActuelle,
+             VERSION_DU_FIRMWARE, lHeureEstConnue() ? (long)time(nullptr) : 0L, (unsigned long)millis());
     ajouterALaFinDUnFichier(chemin.c_str(), entete);
     xSemaphoreTake(verrou, portMAX_DELAY);
     fichierEnCours = chemin;

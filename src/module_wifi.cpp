@@ -10,6 +10,7 @@
 #include "module_journal.h"
 #include "module_mise_a_jour.h"
 #include "module_systeme.h"
+#include "module_synchro.h"
 
 namespace {
 
@@ -214,6 +215,7 @@ void preparerLeServeur() {
 }
 
 void allumer() {
+    interrompreLaSynchronisation();   // le Wi-Fi de la maison et le point d'accès ne vont pas ensemble
     WiFi.mode(WIFI_AP);
     WiFi.softAP(NOM_DU_WIFI, motDePasseDuWifi.c_str(), 6, 0, 1);   // canal 6, visible, un seul téléphone
     serveur.begin();
