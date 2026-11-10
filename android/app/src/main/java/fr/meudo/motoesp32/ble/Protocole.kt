@@ -127,6 +127,9 @@ object Protocole {
                 numero = j.optString("num"),
                 numeroDesAlertes = j.optString("alerte_num"),
                 alertesActives = j.optInt("alertes") == 1,
+                alerteDemarrage = j.optInt("al_dem", 1) == 1,
+                alertePosition = j.optInt("al_pos", 1) == 1,
+                alerteDeplacement = j.optInt("al_dep", 1) == 1,
             ))
             "sys" -> etat.copy(systeme = EtatSysteme(
                 versionFirmware = j.optString("fw"),
@@ -311,6 +314,7 @@ data class EtatSim(
     val modele: String, val versionLogiciel: String, val imei: String, val voixDisponible: Boolean,
     val etat: String, val iccid: String, val imsi: String, val numero: String,
     val numeroDesAlertes: String = "", val alertesActives: Boolean = false,
+    val alerteDemarrage: Boolean = true, val alertePosition: Boolean = true, val alerteDeplacement: Boolean = true,
 )
 
 data class EtatSysteme(

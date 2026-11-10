@@ -2,6 +2,7 @@
 
 #include "configuration.h"
 #include "module_sms.h"
+#include "module_alertes_sms.h"
 #include "module_appli.h"
 #include "module_carte_sd.h"
 #include "module_haut_parleur.h"
@@ -152,6 +153,9 @@ void traiterUnNouveauSMS(int numeroDansLaSim) {
     evenement["date"] = sms.date;
     evenement["txt"]  = sms.texte;
     publierUnEvenementVersLAppli(evenement);
+
+    // « Stop » / « Marche » envoyé depuis le numéro des alertes : coupe ou remet les SMS automatiques.
+    traiterUnSMSDeCommandeDesAlertes(sms.expediteur, sms.texte);
 }
 
 // Appelée par le module modem pour « +CMTI: "SM",3 » (ne doit pas envoyer de commande AT).
