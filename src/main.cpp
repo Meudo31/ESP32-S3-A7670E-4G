@@ -22,6 +22,7 @@
      appels               Appels         passer, décrocher, raccrocher
      haut-parleur         Haut-parleur   annonces, sons, sonnerie
      explorateur          Fichiers       fichiers de la carte SD pour l'appli
+     bus CAN              Bus CAN        écoute des trames de la moto (écoute seule)
      mise à jour          Mise a jour    nouveau firmware envoyé par l'appli
      appli                Appli BLE      liaison Bluetooth avec l'application Android
    ══════════════════════════════════════════════════════════════════════════════ */
@@ -35,10 +36,12 @@
 #include "module_bouton.h"
 #include "module_camera.h"
 #include "module_carte.h"
+#include "module_canbus.h"
 #include "module_carte_sd.h"
 #include "module_explorateur_fichiers.h"
 #include "module_gps.h"
 #include "module_haut_parleur.h"
+#include "module_wifi.h"
 #include "module_alertes_sms.h"
 #include "module_horloge.h"
 #include "module_journal.h"
@@ -88,6 +91,7 @@ void setup() {
     demarrer("NeoPixels", demarrerModuleNeopixels);
     demarrer("Bouton",    demarrerModuleBouton);
     demarrer("Caméra",    demarrerModuleCamera);
+    demarrer("Bus CAN",   demarrerModuleCANBus);
 
     // 4. Le modem et tout ce qui passe par lui. Les abonnements aux notifications
     //    (SMS, appels) sont pris avant que le modem ne finisse de démarrer.
@@ -103,6 +107,7 @@ void setup() {
     // 5. La liaison avec l'application Android.
     demarrer("Explorateur de fichiers", demarrerModuleExplorateurFichiers);
     demarrer("Mise à jour",             demarrerModuleMiseAJour);
+    demarrer("Wi-Fi",                   demarrerModuleWifi);
     demarrer("Appli Bluetooth",         demarrerModuleAppli);
 
     ecrireDansLeJournal("[DEMARRAGE] Terminé : %d tâche(s) lancée(s), %d module(s) en échec.",

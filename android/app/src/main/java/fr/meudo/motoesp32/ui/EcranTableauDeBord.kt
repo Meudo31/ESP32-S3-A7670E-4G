@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -27,6 +28,12 @@ fun EcranTableauDeBord(modifier: Modifier, client: MotoBleClient, ouvrir: (Ecran
         modifier.verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        // Tableau de bord de la moto (bus CAN) : toujours affiché, même sans données
+        val c = etat.canBus
+        TableauDeBordCan(c?.valeurs ?: fr.meudo.motoesp32.ble.ValeursCan(), actif = c?.etat == "actif")
+        if (c != null && c.codesDefaut.isNotEmpty()) Text("⚠️ ${c.codesDefaut.size} code(s) défaut", color = MaterialTheme.colorScheme.error)
+        TextButton(onClick = { ouvrir(Ecran.CAN) }) { Text("Détails du bus CAN") }
+
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
             val gps = etat.gps
             JaugeCirculaire(

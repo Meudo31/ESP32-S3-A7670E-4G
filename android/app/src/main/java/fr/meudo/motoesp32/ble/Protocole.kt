@@ -127,6 +127,9 @@ object Protocole {
                 numero = j.optString("num"),
                 numeroDesAlertes = j.optString("alerte_num"),
                 alertesActives = j.optInt("alertes") == 1,
+                alerteDemarrage = j.optInt("al_dem", 1) == 1,
+                alertePosition = j.optInt("al_pos", 1) == 1,
+                alerteDeplacement = j.optInt("al_dep", 1) == 1,
             ))
             "sys" -> etat.copy(systeme = EtatSysteme(
                 versionFirmware = j.optString("fw"),
@@ -187,13 +190,95 @@ object Protocole {
                 allumee = j.optInt("allumee") == 1,
                 noms = j.optJSONArray("noms")?.let { tableau -> List(tableau.length()) { tableau.optString(it) } } ?: emptyList(),
             ))
+            "camera" -> etat.copy(camera = EtatCamera(
+                prete = j.optInt("pret") == 1,
+                capteur = j.optString("capteur"),
+                tailleMaximum = j.optInt("tmax", 13),
+                valeurs = j.optJSONObject("r")?.let { r -> r.keys().asSequence().associateWith { r.optInt(it) } } ?: emptyMap(),
+                nonPrisEnCharge = j.optJSONArray("ns")?.let { tableau -> List(tableau.length()) { tableau.optString(it) }.toSet() } ?: emptySet(),
+            ))
             "appel" -> etat.copy(appel = EtatAppel(
                 etat = EtatAppel.Etat.entries.getOrElse(j.optInt("etat")) { EtatAppel.Etat.AUCUN },
                 numero = j.optString("num"),
                 dureeSecondes = j.optLong("duree"),
             ))
+            "can" -> {
+                val can = lireLeBusCan(j)
+                val v = can.valeurs
+                val historique = if (can.etat == "actif" && (v.regime != null || v.vitesse != null)) {
+                    (etat.historiqueCan + PointCan(maintenantMs, v.regime ?: 0.0, v.vitesse ?: 0.0)).takeLast(TAILLE_DES_HISTORIQUES)
+                } else etat.historiqueCan
+                etat.copy(canBus = can, historiqueCan = historique)
+            }
+            "can_ids" -> {
+                val lues = lireLesTramesCan(j.optJSONArray("l"))
+                etat.copy(tramesCan = if (j.optInt("debut") == 1) lues else etat.tramesCan + lues)
+            }
             else -> etat
         }
+
+    private fun lireLeBusCan(j: JSONObject): EtatCan {
+        val v = j.optJSONObject("v") ?: JSONObject()
+        fun nombre(cle: String): Double? = if (v.has(cle)) v.optDouble(cle) else null
+        fun etat(cle: String): Boolean? = if (v.has(cle)) v.optInt(cle) == 1 else null
+        val codes = j.optJSONArray("dtc") ?: JSONArray()
+        return EtatCan(
+            etat = j.optString("etat"),
+            vitesseKbits = j.optInt("kbps"),
+            vitesseReglee = j.optInt("reglage"),
+            tramesParSeconde = j.optInt("tps"),
+            totalDesTrames = j.optLong("total"),
+            erreurs = j.optLong("err"),
+            enregistrement = j.optInt("enr") == 1,
+            tramesPerdues = j.optLong("perdues"),
+            brocheTx = j.optInt("tx"),
+            brocheRx = j.optInt("rx"),
+            ageSecondes = j.optLong("age", -1),
+            nombreDIdentifiants = j.optInt("ids"),
+            fichier = j.optString("fichier"),
+            probleme = j.optString("pb"),
+            codesDefaut = List(codes.length()) { i ->
+                val c = codes.getJSONArray(i)
+                CodeDefautCan(spn = c.optLong(0), fmi = c.optInt(1), occurrences = c.optInt(2), source = c.optInt(3))
+            },
+            valeurs = ValeursCan(
+                regime = nombre("rpm"), vitesse = nombre("vit"), vitesseAvant = nombre("vav"), patinage = nombre("pat"),
+                rapport = if (v.has("rap")) v.optString("rap") else null,
+                papillon = nombre("pap"), couple = nombre("cpl"), temperatureMoteur = nombre("tmot"),
+                carburant = nombre("carb"), autonomieKm = nombre("auto"), debitCarburant = nombre("debit"),
+                consoInstantanee = nombre("conso"), consoMoyenne = nombre("cmoy"), tensionBatterie = nombre("bat"),
+                temperatureExterieure = nombre("text"), odometre = nombre("odo"), trip = nombre("trip"),
+                pressionAvant = nombre("pav"), pressionArriere = nombre("par"),
+                temperaturePneuAvant = nombre("tpav"), temperaturePneuArriere = nombre("tpar"),
+                frein = etat("frein"), embrayage = etat("embr"), regulateur = etat("regul"),
+                coupeCircuitSurRun = etat("coupe"), bequille = etat("beq"), capteurDeChute = if (v.has("chute")) v.optInt("chute") else null,
+                clignotantGauche = etat("clig"), clignotantDroit = etat("clid"), warning = etat("warn"),
+                feuCroisement = etat("croi"), feuRoute = etat("route"),
+                lampes = if (v.has("lamp")) v.optInt("lamp") else null,
+                obd = v.optInt("obd") == 1,
+            ),
+        )
+    }
+
+    private fun lireLesTramesCan(tableau: JSONArray?): List<TrameCan> {
+        if (tableau == null) return emptyList()
+        return List(tableau.length()) { i ->
+            val t = tableau.getJSONArray(i)
+            TrameCan(
+                identifiant = t.optString(0), etendue = t.optInt(1) == 1, longueur = t.optInt(2),
+                compteur = t.optLong(3), donnees = t.optString(4), ageSecondes = t.optLong(5),
+            )
+        }
+    }
+
+    /** PGN et adresse source d'un identifiant J1939 (29 bits) écrit en hexadécimal. */
+    fun pgnEtSource(identifiantHexa: String): Pair<Long, Int>? {
+        val id = identifiantHexa.toLongOrNull(16) ?: return null
+        val pf = (id shr 16) and 0xFF
+        var pgn = (id shr 8) and 0x3FFFF
+        if (pf < 240) pgn = pgn and 0x3FF00
+        return pgn to (id and 0xFF).toInt()
+    }
 
     private fun lireLesTaches(tableau: JSONArray?): List<TacheDuModule> {
         if (tableau == null) return emptyList()
@@ -311,6 +396,7 @@ data class EtatSim(
     val modele: String, val versionLogiciel: String, val imei: String, val voixDisponible: Boolean,
     val etat: String, val iccid: String, val imsi: String, val numero: String,
     val numeroDesAlertes: String = "", val alertesActives: Boolean = false,
+    val alerteDemarrage: Boolean = true, val alertePosition: Boolean = true, val alerteDeplacement: Boolean = true,
 )
 
 data class EtatSysteme(
@@ -342,6 +428,12 @@ data class EtatCarte(
 
 data class EtatNeopixels(val numero: Int, val nom: String, val luminosite: Int, val allumee: Boolean, val noms: List<String>)
 
+/** Réglages de la caméra du module (message « camera », voir module_camera.cpp). */
+data class EtatCamera(
+    val prete: Boolean, val capteur: String, val tailleMaximum: Int,
+    val valeurs: Map<String, Int>, val nonPrisEnCharge: Set<String>,
+)
+
 data class EtatAppel(val etat: Etat, val numero: String, val dureeSecondes: Long) {
     enum class Etat { AUCUN, SONNERIE, NUMEROTATION, EN_COMMUNICATION }
 }
@@ -358,10 +450,46 @@ data class EtatDuModule(
     val carte: EtatCarte? = null,
     val neopixels: EtatNeopixels? = null,
     val appel: EtatAppel? = null,
+    val camera: EtatCamera? = null,
     val historiqueGps: List<PointGps> = emptyList(),
     val historiqueBatterie: List<PointBatterie> = emptyList(),
     val historiqueSignal: List<PointSignal> = emptyList(),
+    val canBus: EtatCan? = null,
+    val tramesCan: List<TrameCan> = emptyList(),
+    val historiqueCan: List<PointCan> = emptyList(),
 )
+
+// ─────────────────────────────── Bus CAN de la moto ───────────────────────────────
+
+/** Valeurs décodées des trames de la moto ; null = pas (encore) vue sur le bus. */
+data class ValeursCan(
+    val regime: Double? = null, val vitesse: Double? = null, val vitesseAvant: Double? = null, val patinage: Double? = null,
+    val rapport: String? = null, val papillon: Double? = null, val couple: Double? = null, val temperatureMoteur: Double? = null,
+    val carburant: Double? = null, val autonomieKm: Double? = null, val debitCarburant: Double? = null,
+    val consoInstantanee: Double? = null, val consoMoyenne: Double? = null, val tensionBatterie: Double? = null,
+    val temperatureExterieure: Double? = null, val odometre: Double? = null, val trip: Double? = null,
+    val pressionAvant: Double? = null, val pressionArriere: Double? = null,
+    val temperaturePneuAvant: Double? = null, val temperaturePneuArriere: Double? = null,
+    val frein: Boolean? = null, val embrayage: Boolean? = null, val regulateur: Boolean? = null,
+    val coupeCircuitSurRun: Boolean? = null, val bequille: Boolean? = null, val capteurDeChute: Int? = null,
+    val clignotantGauche: Boolean? = null, val clignotantDroit: Boolean? = null, val warning: Boolean? = null,
+    val feuCroisement: Boolean? = null, val feuRoute: Boolean? = null, val lampes: Int? = null, val obd: Boolean = false,
+)
+
+data class CodeDefautCan(val spn: Long, val fmi: Int, val occurrences: Int, val source: Int)
+
+data class EtatCan(
+    val etat: String, val vitesseKbits: Int, val vitesseReglee: Int, val tramesParSeconde: Int, val totalDesTrames: Long,
+    val erreurs: Long, val enregistrement: Boolean, val tramesPerdues: Long, val brocheTx: Int, val brocheRx: Int,
+    val ageSecondes: Long, val nombreDIdentifiants: Int, val fichier: String, val probleme: String,
+    val codesDefaut: List<CodeDefautCan>, val valeurs: ValeursCan,
+)
+
+data class TrameCan(
+    val identifiant: String, val etendue: Boolean, val longueur: Int, val compteur: Long, val donnees: String, val ageSecondes: Long,
+)
+
+data class PointCan(val instantMs: Long, val regime: Double, val vitesse: Double)
 
 // ─────────────────────────────── Événements ───────────────────────────────
 

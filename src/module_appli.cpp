@@ -11,6 +11,7 @@
 #include "module_appels.h"
 #include "module_batterie.h"
 #include "module_camera.h"
+#include "module_canbus.h"
 #include "module_carte.h"
 #include "module_carte_sd.h"
 #include "module_explorateur_fichiers.h"
@@ -23,6 +24,7 @@
 #include "module_reseau_4g.h"
 #include "module_sms.h"
 #include "module_systeme.h"
+#include "module_wifi.h"
 #include "module_alertes_sms.h"
 
 #if __has_include("secrets.h")
@@ -111,6 +113,9 @@ void envoyerLaCarteSIM() {
     decrireLaCarteSIMEtLeModem(d);
     d["alerte_num"] = numeroDesAlertes();
     d["alertes"]    = alertesActives() ? 1 : 0;
+    d["al_dem"]     = uneAlerteEstActive(TypeDAlerte::DEMARRAGE) ? 1 : 0;
+    d["al_pos"]     = uneAlerteEstActive(TypeDAlerte::POSITION) ? 1 : 0;
+    d["al_dep"]     = uneAlerteEstActive(TypeDAlerte::DEPLACEMENT) ? 1 : 0;
     envoyerUnDocument(d);
 }
 void envoyerLesNeopixels()   { JsonDocument d; decrireLesNeopixels(d);        envoyerUnDocument(d); }
@@ -131,6 +136,44 @@ void envoyerLeProcesseur() {
     envoyerUnDocument(liaison);
 }
 void envoyerLesMemoires()    { JsonDocument d; decrireLesMemoires(d);         envoyerUnDocument(d); }
+void envoyerLeBusCAN()       { JsonDocument d; decrireLeBusCAN(d);            envoyerUnDocument(d); }
+
+// Trames CAN vues, par paquets de 8 : {"t":"can_ids","debut":1,"fin":0,"l":[["18FEF100",1,8,1234,"0102...",3],...]}
+// Chaque trame : identifiant (hexa), 29 bits (0/1), longueur, compteur, données (hexa), âge en secondes.
+void envoyerLesTramesCAN() {
+    const int nombre = nombreDeTramesCANVues();
+    if (nombre == 0) {
+        JsonDocument d;
+        d["t"] = "can_ids"; d["debut"] = 1; d["fin"] = 1; d["l"].to<JsonArray>();
+        envoyerUnDocument(d);
+        return;
+    }
+    for (int premiere = 0; premiere < nombre; premiere += 8) {
+        JsonDocument d;
+        d["t"]     = "can_ids";
+        d["debut"] = premiere == 0 ? 1 : 0;
+        d["fin"]   = premiere + 8 >= nombre ? 1 : 0;
+        JsonArray liste = d["l"].to<JsonArray>();
+        for (int numero = premiere; numero < min(premiere + 8, nombre); numero++) {
+            TrameCANVue t;
+            if (!trameCANVue(numero, t)) break;
+            char id[12], donnees[17];
+            snprintf(id, sizeof(id), t.etendue ? "%08lX" : "%03lX", (unsigned long)t.identifiant);
+            for (int i = 0; i < min<int>(t.longueur, 8); i++) snprintf(donnees + 2 * i, 3, "%02X", t.donnees[i]);
+            donnees[2 * min<int>(t.longueur, 8)] = '\0';
+            JsonArray ligne = liste.add<JsonArray>();
+            ligne.add(id);
+            ligne.add(t.etendue ? 1 : 0);
+            ligne.add(t.longueur);
+            ligne.add(t.compteur);
+            ligne.add(donnees);
+            ligne.add((millis() - t.derniereFoisMs) / 1000);
+        }
+        envoyerUnDocument(d);
+        vTaskDelay(pdMS_TO_TICKS(30));   // laisse partir la notification
+    }
+}
+void envoyerLesReglagesDeLaCamera() { JsonDocument d; decrireLesReglagesDeLaCamera(d); envoyerUnDocument(d); }
 
 void envoyerLaCarteEtLaCarteSD() {
     const InformationsCarteSD sd = informationsDeLaCarteSD();
@@ -180,6 +223,8 @@ void envoyerToutLEtat() {
     envoyerLaCarteSIM();
     envoyerLesNeopixels();
     envoyerLAppelEnCours();
+    envoyerLeBusCAN();
+    envoyerLesReglagesDeLaCamera();
 }
 
 // ─────────────────────────────── Commandes ───────────────────────────────
@@ -231,6 +276,29 @@ void commandeHeure(const char* nom, const ArgumentsDeCommande& arguments) {
 void commandePhoto(const char* nom, const ArgumentsDeCommande&) {
     const bool demandee = demanderUnePhoto();
     repondreALAppli(nom, demandee, demandee ? "Photo demandée" : "Caméra non démarrée");
+}
+
+void commandeReglagesDeLaCamera(const char* nom, const ArgumentsDeCommande&) {
+    envoyerLesReglagesDeLaCamera();
+    repondreALAppli(nom, true, "Réglages envoyés");
+}
+
+// CAMERA_REGLER nom|valeur, ex. « CAMERA_REGLER lum|1 ». Le réglage est gardé dans la mémoire permanente.
+void commandeReglerLaCamera(const char* nom, const ArgumentsDeCommande& arguments) {
+    String explication;
+    String valeur = arguments.second;
+    valeur.trim();
+    if (arguments.premier.length() == 0 || valeur.length() == 0) {
+        repondreALAppli(nom, false, "Usage : CAMERA_REGLER nom|valeur");
+        return;
+    }
+    const bool reussi = reglerLaCamera(arguments.premier.c_str(), valeur.toInt(), explication);
+    repondreALAppli(nom, reussi, explication.c_str());
+}
+
+void commandeReglagesParDefautDeLaCamera(const char* nom, const ArgumentsDeCommande&) {
+    remettreLesReglagesDeLaCameraParDefaut();
+    repondreALAppli(nom, true, "Réglages de la caméra remis par défaut");
 }
 
 void commandeGPS(const char* nom, const ArgumentsDeCommande&) {
@@ -320,9 +388,56 @@ void commandeActiverLesAlertes(const char* nom, const ArgumentsDeCommande& argum
     envoyerLaCarteSIM();
 }
 
+// ALERTES_TYPE demarrage|1 (ou position, deplacement ; 0 = coupée) : coupe ou active un seul genre d'alerte.
+void commandeChoisirUnTypeDAlerte(const char* nom, const ArgumentsDeCommande& arguments) {
+    String type = arguments.premier;
+    type.toLowerCase();
+    TypeDAlerte choix;
+    if (type == "demarrage") choix = TypeDAlerte::DEMARRAGE;
+    else if (type == "position") choix = TypeDAlerte::POSITION;
+    else if (type == "deplacement") choix = TypeDAlerte::DEPLACEMENT;
+    else { repondreALAppli(nom, false, "Type : demarrage, position ou deplacement"); return; }
+    const bool active = arguments.second.toInt() != 0;
+    activerUneAlerte(choix, active);
+    repondreALAppli(nom, true, (String("Alerte ") + type + " " + (active ? "activée" : "coupée")).c_str());
+    envoyerLaCarteSIM();
+}
+
 void commandeTesterLesAlertes(const char* nom, const ArgumentsDeCommande&) {
     const bool reussi = envoyerUneAlerteDeTest();
     repondreALAppli(nom, reussi, reussi ? "SMS de test demandé" : "Aucun numéro enregistré");
+}
+
+void commandeVitesseCAN(const char* nom, const ArgumentsDeCommande& arguments) {
+    const int kbits = arguments.premier.toInt();
+    const bool accepte = choisirLaVitesseDuBusCAN(kbits);
+    repondreALAppli(nom, accepte, accepte ? (kbits == 0 ? "Recherche automatique de la vitesse" : "Vitesse du bus CAN réglée")
+                                          : "Vitesse : 0 (auto), 125, 250, 500 ou 1000");
+    envoyerLeBusCAN();
+}
+
+void commandeEnregistrementCAN(const char* nom, const ArgumentsDeCommande& arguments) {
+    activerLEnregistrementCAN(arguments.premier.toInt() != 0);
+    repondreALAppli(nom, true, enregistrementCANActif() ? "Enregistrement des trames activé" : "Enregistrement des trames coupé");
+    envoyerLeBusCAN();
+}
+
+void commandeTramesCAN(const char*, const ArgumentsDeCommande&) { envoyerLesTramesCAN(); }
+
+void commandeEffacerCAN(const char* nom, const ArgumentsDeCommande&) {
+    effacerLesTramesCANVues();
+    repondreALAppli(nom, true, "Liste des trames et codes défaut effacés");
+}
+
+void commandeOuvrirLeWifi(const char* nom, const ArgumentsDeCommande&) {
+    String reseau, motDePasse, adresse;
+    if (ouvrirLeWifi(reseau, motDePasse, adresse)) repondreALAppli(nom, true, (reseau + "|" + motDePasse + "|" + adresse).c_str());
+    else                                            repondreALAppli(nom, false, "Wi-Fi impossible à ouvrir");
+}
+
+void commandeFermerLeWifi(const char* nom, const ArgumentsDeCommande&) {
+    fermerLeWifi();
+    repondreALAppli(nom, true, "Wi-Fi fermé");
 }
 
 void commandeSortieAudio(const char* nom, const ArgumentsDeCommande& arguments) {
@@ -424,15 +539,22 @@ const CommandeConnue COMMANDES[] = {
     { "SONS_INSTALLER",      commandeInstallerLesSons },
     { "ANNONCER",            commandeAnnoncer },
     { "SON_TEST",            commandeTesterLeSon },
+    { "WIFI_ON",             commandeOuvrirLeWifi },
     { "ALERTES_NUMERO",      commandeNumeroDesAlertes },
     { "ALERTES",             commandeActiverLesAlertes },
+    { "ALERTES_TYPE",        commandeChoisirUnTypeDAlerte },
     { "ALERTES_TEST",        commandeTesterLesAlertes },
+    { "WIFI_OFF",            commandeFermerLeWifi },
     { "SON_JOUER",           commandeJouerUnSon },
     { "SORTIE_AUDIO",        commandeSortieAudio },
     { "NEO",                 commandeChoisirLAnimation },
     { "NEO_SUIVANTE",        commandeAnimationSuivante },
     { "NEO_LUMINOSITE",      commandeLuminosite },
     { "NEO_ONOFF",           commandeAllumerOuEteindre },
+    { "CAN_VITESSE",         commandeVitesseCAN },
+    { "CAN_ENREGISTRER",     commandeEnregistrementCAN },
+    { "CAN_TRAMES",          commandeTramesCAN },
+    { "CAN_EFFACER",         commandeEffacerCAN },
     { "FICHIERS",            commandeListerUnDossier },
     { "FICHIER_RENOMMER",    commandeRenommer },
     { "FICHIER_DEPLACER",    commandeRenommer },
@@ -444,6 +566,9 @@ const CommandeConnue COMMANDES[] = {
     { "FICHIER_ENVOYER",     commandeRecevoirUnFichier },
     { "FICHIER_ENVOYER_FIN", commandeTerminerLaReception },
     { "FICHIER_ENVOYER_ANNULER", commandeAnnulerLaReception },
+    { "CAMERA_REGLAGES",     commandeReglagesDeLaCamera },
+    { "CAMERA_REGLER",       commandeReglerLaCamera },
+    { "CAMERA_DEFAUT",       commandeReglagesParDefautDeLaCamera },
 };
 
 void executerUneCommande(const char* texte) {
@@ -715,7 +840,7 @@ void tacheAppli(void*) {
         // Pendant une mise à jour ou un envoi de fichier, on laisse toute la liaison au transfert.
         if (authentifie && !miseAJourEnCours() && !receptionDUnFichierEnCours()) {
             const uint32_t maintenant = millis();
-            if (maintenant - dernierGPS       >= PERIODE_GPS)      { dernierGPS = maintenant;       envoyerLaPositionGPS(); }
+            if (maintenant - dernierGPS       >= PERIODE_GPS)      { dernierGPS = maintenant;       envoyerLaPositionGPS(); envoyerLeBusCAN(); }
             if (maintenant - derniereBatterie >= PERIODE_BATTERIE) { derniereBatterie = maintenant; envoyerLaBatterie(); }
             if (maintenant - dernierReseau    >= PERIODE_RESEAU)   { dernierReseau = maintenant;    envoyerLeReseau(); }
             if (maintenant - dernierSysteme   >= PERIODE_SYSTEME)  { dernierSysteme = maintenant;   envoyerLesMemoires(); envoyerLeProcesseur(); }

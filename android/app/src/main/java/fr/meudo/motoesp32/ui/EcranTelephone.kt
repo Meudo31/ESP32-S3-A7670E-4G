@@ -292,12 +292,27 @@ private fun CarteDesAlertes(client: MotoBleClient, sim: fr.meudo.motoesp32.ble.E
             style = MaterialTheme.typography.bodySmall,
         )
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Alertes activées", modifier = Modifier.weight(1f))
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Envoi automatique de SMS")
+                Text(
+                    if (sim.alertesActives) "Activé" else "Arrêté : aucun SMS automatique ne part",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (sim.alertesActives) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+                )
+            }
             androidx.compose.material3.Switch(
                 checked = sim.alertesActives,
                 onCheckedChange = { client.envoyerCommande("ALERTES ${if (it) 1 else 0}") },
             )
         }
+        // Chaque genre d'alerte se coupe à part (grisé quand l'interrupteur général est coupé).
+        LigneDAlerte(client, "À l'allumage", "demarrage", sim.alerteDemarrage, sim.alertesActives)
+        LigneDAlerte(client, "Position GPS trouvée", "position", sim.alertePosition, sim.alertesActives)
+        LigneDAlerte(client, "Déplacement de plus de 5 km", "deplacement", sim.alerteDeplacement, sim.alertesActives)
+        Text(
+            "Depuis ce numéro, un SMS « Stop » coupe les alertes et « Marche » les remet (le module répond par SMS).",
+            style = MaterialTheme.typography.bodySmall,
+        )
         OutlinedTextField(
             value = numero, onValueChange = { numero = it.filter { c -> c.isDigit() || c == '+' }.take(20) },
             label = { Text("Numéro (+33…)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
@@ -311,5 +326,19 @@ private fun CarteDesAlertes(client: MotoBleClient, sim: fr.meudo.motoesp32.ble.E
                 Text("Envoyer un SMS de test")
             }
         }
+    }
+}
+
+@Composable
+private fun LigneDAlerte(client: MotoBleClient, titre: String, type: String, active: Boolean, general: Boolean) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 16.dp)) {
+        Text(
+            titre, modifier = Modifier.weight(1f),
+            color = if (general) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        androidx.compose.material3.Switch(
+            checked = active, enabled = general,
+            onCheckedChange = { client.envoyerCommande("ALERTES_TYPE $type|${if (it) 1 else 0}") },
+        )
     }
 }

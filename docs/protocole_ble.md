@@ -42,10 +42,13 @@ Chaque notification contient un objet JSON dont le champ `t` donne le type.
 | `sys` | 5 s | `fw`, `build`, `carte`, `puce`, `rev`, `coeurs`, `mhz`, `temp`, `flash`, `flash_mhz`, `prog`, `prog_libre`, `sdk`, `mac`, `part`, `up` s, `reset`, `boots` |
 | `ble` | 5 s | Liaison vue par le module : `rssi` dBm, `int` intervalle ms, `to` délai de coupure s, `deco` nombre de déconnexions, `hist` (4 dernières coupures : heure, raison, durée, signal) |
 | `mem` | 5 s | `ram_total` `ram_libre` `ram_min` `ram_bloc`, `psram_total` `psram_libre` `psram_min` `psram_bloc` (octets) |
-| `sim` | 15 s | `modele`, `logiciel`, `imei`, `voix` (le modem sait téléphoner), `etat`, `iccid`, `imsi`, `num`, `alerte_num`, `alertes` (0/1) |
+| `sim` | 15 s | `modele`, `logiciel`, `imei`, `voix` (le modem sait téléphoner), `etat`, `iccid`, `imsi`, `num`, `alerte_num`, `alertes` (0/1, interrupteur général), `al_dem`, `al_pos`, `al_dep` (0/1 : alerte d'allumage, de position trouvée, de déplacement) |
 | `carte` | 15 s | `version` (V1/V2), `methode` (comment elle a été détectée), `camera`, `sd`, `sd_type`, `sd_total`, `sd_util`, `heure` (source de l'heure), `vol` |
 | `neo` | 15 s et à chaque changement | `num`, `nom`, `lum` 0-255, `allumee`, `noms` (les 13 animations) |
 | `appel` | 15 s et à chaque changement | `etat` (0 aucun, 1 sonnerie, 2 numérotation, 3 en communication), `num`, `duree` s |
+| `can` | 1 s | Bus CAN de la moto : `etat` (`actif`, `silence`, `recherche`, `absent`), `kbps` (vitesse trouvée), `reglage` (0 = auto), `tps` trames/s, `total`, `err` (erreurs du bus), `enr` (enregistrement SD 0/1), `perdues`, `fichier`, `ids` (identifiants différents vus), `age` s depuis la dernière trame, `pb` (dernier problème), `tx` `rx` (broches), `dtc` : `[SPN, FMI, occurrences, source]`, et `v` : valeurs décodées présentes seulement si vues — `rpm`, `vit` km/h, `vav` roue avant, `pat` patinage, `rap` rapport, `pap` gaz %, `cpl` couple %, `tmot` °C, `carb` %, `auto` km, `debit` L/h, `conso` `cmoy` L/100 km, `bat` V, `text` °C, `odo` `trip` km, `pav` `par` bar, `tpav` `tpar` °C, `frein` `embr` `regul` `coupe` `beq` `clig` `clid` `warn` `croi` `route` (0/1), `chute` (capteur de chute brut), `lamp` (MIL 1, stop 2, alerte 4, protection 8), `obd` |
+| `can_ids` | sur `CAN_TRAMES` | `debut`, `fin`, `l` : `[identifiant hexa, 29 bits 0/1, longueur, compteur, données hexa, âge s]` ; plusieurs messages |
+| `camera` | à la connexion, sur `CAMERA_REGLAGES` et à chaque réglage | `pret` 0/1, `capteur` (OV2640…), `tmax` (plus grande résolution possible), `r` : objet `{nom: valeur}` de tous les réglages, `ns` : réglages refusés par le capteur |
 | `taches` | sur `SYSTEME` | `debut` (1 = nouvelle liste), `l` : `[nom, pile, pile restante, priorité, cœur]` ; la liste arrive en plusieurs messages |
 
 Pour ajouter une donnée : l'ajouter dans la fonction `decrire...()` du module concerné, puis dans `Protocole.appliquer()` côté Android.
@@ -75,6 +78,9 @@ Les arguments sont séparés du nom par un espace, et entre eux par `|`. Les nom
 | `LOGS ON` / `LOGS OFF` | Active ou coupe l'envoi du journal |
 | `HEURE <secondes>` | Donne l'heure du téléphone |
 | `PHOTO` | Prend une photo dans `/photos/jj-mm-aaaa/jj-mm-aaaa_hh-mm-ss_ESP32-A7670.jpg` |
+| `CAMERA_REGLAGES` | Renvoie le message `camera` (tous les réglages) |
+| `CAMERA_REGLER nom\|valeur` | Change un réglage de la caméra, l'applique tout de suite et le garde en mémoire (voir ci-dessous) |
+| `CAMERA_DEFAUT` | Remet tous les réglages de la caméra par défaut |
 | `GPS`, `RESEAU` | Renvoie la position ou l'état du réseau 4G |
 | `SMS_ENVOYER numéro\|texte` | Envoie un SMS (découpé en plusieurs si besoin) |
 | `SMS_LISTE` | Liste les SMS de la carte SIM |
@@ -83,13 +89,20 @@ Les arguments sont séparés du nom par un espace, et entre eux par `|`. Les nom
 | `VOLUME 0-5` | Volume du haut-parleur |
 | `ANNONCER texte` | Fait prononcer un texte au haut-parleur |
 | `ALERTES_NUMERO numéro` | Numéro qui reçoit les alertes SMS (vide = aucun) ; gardé dans le module |
-| `ALERTES 0\|1` | Coupe ou active les alertes SMS |
-| `ALERTES_TEST` | Envoie tout de suite le SMS d'état (batterie, réseau, position) |
+| `ALERTES 0\|1` | Coupe ou active tous les SMS automatiques (gardé après redémarrage). Aussi par SMS depuis le numéro des alertes : `Stop` / `Marche` |
+| `ALERTES_TYPE type\|0\|1` | Coupe ou active un seul genre d'alerte : `demarrage`, `position` ou `deplacement` |
+| `ALERTES_TEST` | Envoie tout de suite le SMS d'état (batterie, réseau, position), même alertes coupées |
+| `WIFI_ON` | Ouvre le Wi-Fi « Moto_ESP32 » du module ; répond `nom\|mot de passe\|adresse` (voir ci-dessous) |
+| `WIFI_OFF` | Ferme le Wi-Fi du module (il se ferme aussi seul après 2 minutes sans requête) |
 | `SON_TEST` | Bip (`AT+SIMTONE`), phrase (`AT+CTTS`) et son SMS ; répond `SON_TEST` avec ce que le modem a accepté |
 | `SON_JOUER chemin` | Copie un son de la carte SD (WAV, AMR, MP3) dans le modem et le joue sur le haut-parleur |
 | `SORTIE_AUDIO 1\|3` | Sortie audio du modem (`AT+CSDVC`) : 3 = haut-parleur (par défaut), 1 = combiné ; mémorisée, puis test |
 | `SONS_INSTALLER` | Copie `/sons/sms.wav` et `/sons/sonnerie.wav` de la carte SD dans le modem |
 | `NEO n`, `NEO_SUIVANTE`, `NEO_ONOFF`, `NEO_LUMINOSITE 0-255` | Bande NeoPixel |
+| `CAN_VITESSE 0\|125\|250\|500\|1000` | Vitesse du bus CAN en kbit/s (0 = recherche automatique) ; mémorisée |
+| `CAN_ENREGISTRER 0\|1` | Coupe ou active l'enregistrement des trames brutes dans `/can` de la carte SD ; mémorisé |
+| `CAN_TRAMES` | Envoie la liste des trames vues (`can_ids`) |
+| `CAN_EFFACER` | Oublie la liste des trames vues et les codes défaut |
 | `FICHIERS chemin` | Liste un dossier de la carte SD |
 | `FICHIER_RENOMMER ancien\|nouveau`, `FICHIER_DEPLACER source\|destination` | Renomme ou déplace un fichier ou un dossier |
 | `FICHIER_SUPPRIMER chemin` | Supprime un fichier ou un dossier (avec son contenu) |
@@ -101,6 +114,31 @@ Les arguments sont séparés du nom par un espace, et entre eux par `|`. Les nom
 | `FICHIER_ENVOYER_ANNULER` | Abandonne l'envoi et efface le fichier partiel |
 
 Pour en ajouter une : une ligne dans le tableau `COMMANDES` de `module_appli.cpp`, puis un bouton dans l'écran Android concerné.
+
+## Réglages de la caméra
+
+Gardés dans la mémoire permanente du module (espace `camera`) et appliqués à chaque démarrage.
+Tableau `REGLAGES` de `src/module_camera.cpp`, repris dans `android/.../ui/ReglagesCamera.kt`.
+
+| Nom | Valeurs | Défaut | Rôle |
+|---|---|---|---|
+| `taille` | 0-13 (jusqu'à `tmax`) | 13 (9 sans PSRAM) | Résolution : 5 = 320×240, 8 = 640×480, 9 = 800×600, 10 = 1024×768, 11 = 1280×720, 12 = 1280×1024, 13 = 1600×1200 |
+| `qualite` | 4-63 | 10 (12 sans PSRAM) | Compression JPEG (4 = meilleure qualité) |
+| `lum`, `contraste`, `satur`, `nettete` | -2 à 2 | 0 | Luminosité, contraste, saturation, netteté (netteté : pas sur l'OV2640) |
+| `debruit` | 0-8 | 0 | Réduction du bruit (pas sur l'OV2640) |
+| `effet` | 0-6 | 0 | Aucun, négatif, noir et blanc, rouge, vert, bleu, sépia |
+| `awb`, `awb_gain` | 0/1 | 1 | Balance des blancs automatique et son gain |
+| `wb_mode` | 0-4 | 0 | Auto, soleil, nuageux, bureau, maison |
+| `aec`, `aec2` | 0/1 | 1, 0 | Exposition automatique, et sa version DSP |
+| `ae_niv` | -2 à 2 | 0 | Correction d'exposition |
+| `aec_val` | 0-1200 | 300 | Exposition manuelle (si `aec` = 0) |
+| `agc` | 0/1 | 1 | Gain automatique |
+| `agc_gain` | 0-30 | 0 | Gain manuel 1x à 31x (si `agc` = 0) |
+| `gain_max` | 0-6 | 0 | Plafond du gain automatique : 2x à 128x |
+| `bpc`, `wpc`, `gamma`, `lenc`, `dcw` | 0/1 | 0, 1, 1, 1, 1 | Corrections : pixels noirs, pixels blancs, gamma, objectif, réduction de taille |
+| `miroir`, `retourne` | 0/1 | 0 | Miroir horizontal, retournement vertical |
+| `mire` | 0/1 | 0 | Barres de couleur de test |
+| `jeter` | 0-10 | 1 | Images jetées avant chaque photo (laisse l'exposition s'ajuster) |
 
 ## Téléchargement d'un fichier de la carte SD
 
@@ -130,3 +168,10 @@ Le fichier à envoyer est `firmware.bin` : l'artefact **firmware-esp32** de l'ac
 ou `.pio/build/esp32-s3-devkitc-1/firmware.bin` après une compilation locale.
 La table `default_16MB.csv` contient deux partitions applicatives : une mise à jour interrompue laisse le module sur l'ancienne version.
 Pendant l'envoi, les données et le journal sont suspendus pour libérer la bande passante.
+
+## Gros transferts par Wi-Fi
+
+Pour la mise à jour du firmware et les fichiers de plus de 100 Ko, l'application (Android 10 et plus) demande `WIFI_ON`,
+se connecte au point d'accès du module comme réseau local (Internet reste sur la 4G), puis utilise le serveur web
+`http://192.168.4.1` : `GET /fichier?chemin=…`, `POST /fichier?chemin=…` et `POST /firmware` (multipart, champ `fichier`).
+Elle envoie ensuite `WIFI_OFF`. En cas d'échec, le transfert repart en Bluetooth. Détails dans `include/module_wifi.h`.

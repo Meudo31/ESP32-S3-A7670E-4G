@@ -14,6 +14,7 @@
    ══════════════════════════════════════════════════════════════════════════════ */
 
 #include <Arduino.h>
+#include <ArduinoJson.h>
 
 #define DOSSIER_DES_PHOTOS "/photos"
 
@@ -22,6 +23,16 @@ const char* etatDeLaCamera();   // explication lisible (prête, absente, conflit
 
 // Demande une photo. Le résultat arrive dans l'application (événement « photo »).
 bool demanderUnePhoto();
+
+// ─── Réglages de l'image (gardés dans la mémoire permanente, appliqués à chaque démarrage) ───
+// Noms : taille, qualite, lum, contraste, satur, nettete, debruit, effet, awb, awb_gain, wb_mode,
+// aec, aec2, ae_niv, aec_val, agc, agc_gain, gain_max, bpc, wpc, gamma, lenc, dcw, miroir,
+// retourne, mire, jeter. Limites et signification : tableau REGLAGES de module_camera.cpp.
+// Renvoie false (avec l'explication) si le nom ou la valeur est invalide, ou si le capteur refuse.
+bool reglerLaCamera(const char* nom, int valeur, String& explication);
+void remettreLesReglagesDeLaCameraParDefaut();
+// Message « camera » pour l'application : {"t":"camera","pret":1,"capteur":"OV2640","tmax":13,"r":{...},"ns":[...]}
+void decrireLesReglagesDeLaCamera(JsonDocument& document);
 
 bool demarrerModuleCamera();
 
