@@ -22,6 +22,7 @@
      appels               Appels         passer, décrocher, raccrocher
      haut-parleur         Haut-parleur   annonces, sons, sonnerie
      explorateur          Fichiers       fichiers de la carte SD pour l'appli
+     bus CAN              Bus CAN        écoute des trames de la moto (écoute seule)
      mise à jour          Mise a jour    nouveau firmware envoyé par l'appli
      appli                Appli BLE      liaison Bluetooth avec l'application Android
    ══════════════════════════════════════════════════════════════════════════════ */
@@ -35,6 +36,7 @@
 #include "module_bouton.h"
 #include "module_camera.h"
 #include "module_carte.h"
+#include "module_canbus.h"
 #include "module_carte_sd.h"
 #include "module_explorateur_fichiers.h"
 #include "module_gps.h"
@@ -88,6 +90,7 @@ void setup() {
     demarrer("NeoPixels", demarrerModuleNeopixels);
     demarrer("Bouton",    demarrerModuleBouton);
     demarrer("Caméra",    demarrerModuleCamera);
+    demarrer("Bus CAN",   demarrerModuleCANBus);
 
     // 4. Le modem et tout ce qui passe par lui. Les abonnements aux notifications
     //    (SMS, appels) sont pris avant que le modem ne finisse de démarrer.
