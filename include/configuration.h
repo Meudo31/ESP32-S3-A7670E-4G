@@ -10,7 +10,7 @@
 #include <Arduino.h>
 
 // ─── Version du firmware (affichée dans l'application). À augmenter à chaque nouvelle version. ───
-#define VERSION_DU_FIRMWARE "0.4.4"
+#define VERSION_DU_FIRMWARE "0.5.0"
 
 // ─── Nom du module dans les fichiers (photos) et en Bluetooth ───
 #define NOM_DU_MODULE_DANS_LES_FICHIERS "ESP32-A7670"
@@ -20,6 +20,12 @@
                                                 // pas 40 (sortie RI du modem A7670E, d'après le brochage Waveshare).
 #define NOMBRE_DE_LED_DE_LA_BANDE       14
 #define BROCHE_BOUTON_ANIMATIONS        21      // bouton entre la broche et la masse (GND)
+
+// ─── Bus CAN de la moto : transceiver 3,3 V SN65HVD230 (mettre -1 pour désactiver) ───
+// Les deux seuls GPIO encore libres de la carte. TX sur le GPIO 3 (broche lue au démarrage) :
+// il est relié à l'entrée CTX du transceiver, qui ne le force donc jamais à un mauvais niveau.
+#define BROCHE_CAN_TX                    3      // vers CTX du SN65HVD230
+#define BROCHE_CAN_RX                    1      // depuis CRX du SN65HVD230
 
 // ─── Broches fixes de la carte Waveshare (identiques sur V1 et V2) ───
 #define BROCHE_LED_RGB_DE_LA_CARTE      38
