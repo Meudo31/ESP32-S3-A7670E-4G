@@ -12,8 +12,8 @@ android {
         applicationId = "fr.meudo.motoesp32"
         minSdk = 26
         targetSdk = 35
-        versionCode = 29
-        versionName = "0.5.4"
+        versionCode = 30
+        versionName = "0.6.0"
     }
 
     // Clé de signature de TEST, la même à chaque compilation : sans elle, GitHub crée une clé différente

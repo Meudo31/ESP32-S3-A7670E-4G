@@ -457,7 +457,7 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
         if (_etat.value is EtatConnexion.Reconnexion) return
         scope.launch {
             if (!ecrire(Protocole.COMMANDE, commande.toByteArray(Charsets.UTF_8))) {
-                _reponses.tryEmit(ReponseCommande(commande, false, "Envoi impossible"))
+                _reponses.tryEmit(ReponseCommande(commande.substringBefore(" "), false, "Envoi impossible"))
             }
         }
     }

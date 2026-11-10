@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.BluetoothSearching
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.Cable
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Folder
@@ -78,6 +79,7 @@ enum class Ecran(val titre: String, val icone: ImageVector) {
     BATTERIE("Batterie et alimentation", Icons.Filled.BatteryChargingFull),
     SYSTEME("Module (mémoire, processeur)", Icons.Filled.Memory),
     JOURNAL("Journal", Icons.Filled.Terminal),
+    SYNCHRO("Synchro à la maison", Icons.Filled.CloudUpload),
     MISE_A_JOUR("Mise à jour du firmware", Icons.Filled.SystemUpdate),
 }
 
@@ -198,6 +200,7 @@ fun AppliMoto(
                     Ecran.BATTERIE -> EcranBatterie(modifier, client)
                     Ecran.SYSTEME -> EcranSysteme(modifier, client)
                     Ecran.JOURNAL -> EcranLogs(modifier, client)
+                    Ecran.SYNCHRO -> EcranSynchro(modifier, client)
                     Ecran.MISE_A_JOUR -> EcranMiseAJour(modifier, viewModel)
                 }
             }
@@ -221,6 +224,7 @@ private val COMMANDES_A_CONFIRMER = setOf(
     "FICHIER_RENOMMER", "FICHIER_DEPLACER", "FICHIER_SUPPRIMER", "DOSSIER_CREER", "SMS_SUPPRIMER",
     "SONS_INSTALLER", "REBOOT", "PING", "APPELER", "SON_TEST", "SON_JOUER", "ALERTES_NUMERO", "ALERTES", "ALERTES_TYPE", "ALERTES_TEST",
     "CAN_VITESSE", "CAN_ENREGISTRER", "CAN_EFFACER",
+    "SYNCHRO_WIFI", "SYNCHRO_SERVEUR", "SYNCHRO_GOOGLE", "SYNCHRO_GOOGLE_JETON", "SYNCHRO", "SYNCHRO_CAN", "SYNCHRO_MAINTENANT",
 )
 
 private fun texteEtat(etat: EtatConnexion): String = when (etat) {

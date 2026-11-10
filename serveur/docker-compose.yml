@@ -1,0 +1,36 @@
+# Serveur maison (facultatif, à la place de Supabase) : PostgreSQL + PostgREST.
+# Sur un Raspberry Pi / NAS / PC allumé en permanence :
+#   cp .env.example .env   (puis changer les mots de passe)
+#   docker compose up -d
+#   ./creer_cle.sh         → clé à mettre dans l'appli
+# Adresse à mettre dans l'appli : http://<adresse-du-serveur>:3000
+services:
+  base:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${MOT_DE_PASSE_POSTGRES}
+      POSTGRES_DB: moto
+      MOT_DE_PASSE_AUTHENTICATOR: ${MOT_DE_PASSE_AUTHENTICATOR}
+    volumes:
+      - donnees:/var/lib/postgresql/data
+      - ./initialisation.sh:/docker-entrypoint-initdb.d/00-initialisation.sh:ro
+      - ./schema.sql:/docker-entrypoint-initdb.d/10-schema.sql:ro
+      - ./droits_maison.sql:/docker-entrypoint-initdb.d/20-droits.sql:ro
+    ports:
+      - "5432:5432"   # pour lire les données (DBeaver, Grafana...) ; retirer si inutile
+
+  api:
+    image: postgrest/postgrest:v12.2.3
+    restart: unless-stopped
+    depends_on: [base]
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${MOT_DE_PASSE_AUTHENTICATOR}@base:5432/moto
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: nobody
+      PGRST_JWT_SECRET: ${SECRET_JWT}
+    ports:
+      - "3000:3000"
+
+volumes:
+  donnees:

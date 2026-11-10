@@ -346,7 +346,8 @@ Resultat insererDansLaTable(Connexion& c, const Reglages& r, const char* table, 
     };
     if (r.cle.length() > 0) {
         entetes.push_back({ "apikey", r.cle });
-        entetes.push_back({ "Authorization", "Bearer " + r.cle });
+        // Les nouvelles clés Supabase (« sb_publishable_... ») ne sont pas des JWT : seulement dans « apikey ».
+        if (!r.cle.startsWith("sb_")) entetes.push_back({ "Authorization", "Bearer " + r.cle });
     }
     String reponse;
     const int code = requeteHTTP(c, url, "POST", (const uint8_t*)corps.c_str(), corps.length(), entetes, &reponse, true);
