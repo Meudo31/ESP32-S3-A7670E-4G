@@ -323,6 +323,8 @@ private fun EcranConnexion(modifier: Modifier, viewModel: MotoViewModel, activer
         if (etat == EtatConnexion.Recherche && modules.isEmpty()) {
             item { Text("Aucun module trouvé pour l'instant. Le module est-il allumé ?") }
         }
+        // Tableau de bord de la moto visible même sans connexion (tout éteint, valeurs « — »)
+        item { TableauDeBordCan(fr.meudo.motoesp32.ble.ValeursCan(), actif = false) }
     }
 }
 

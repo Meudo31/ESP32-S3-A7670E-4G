@@ -28,6 +28,12 @@ fun EcranTableauDeBord(modifier: Modifier, client: MotoBleClient, ouvrir: (Ecran
         modifier.verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        // Tableau de bord de la moto (bus CAN) : toujours affiché, même sans données
+        val c = etat.canBus
+        TableauDeBordCan(c?.valeurs ?: fr.meudo.motoesp32.ble.ValeursCan(), actif = c?.etat == "actif")
+        if (c != null && c.codesDefaut.isNotEmpty()) Text("⚠️ ${c.codesDefaut.size} code(s) défaut", color = MaterialTheme.colorScheme.error)
+        TextButton(onClick = { ouvrir(Ecran.CAN) }) { Text("Détails du bus CAN") }
+
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
             val gps = etat.gps
             JaugeCirculaire(
@@ -53,25 +59,6 @@ fun EcranTableauDeBord(modifier: Modifier, client: MotoBleClient, ouvrir: (Ecran
                 },
             )
             TextButton(onClick = { ouvrir(Ecran.GPS) }) { Text("Carte et détails") }
-        }
-
-        Carte("Moto (bus CAN)") {
-            val c = etat.canBus
-            val v = c?.valeurs
-            Text(
-                when {
-                    c == null -> "En attente…"
-                    c.etat != "actif" -> "Pas de trames (moto coupée ou non branchée)"
-                    else -> listOfNotNull(
-                        v?.regime?.let { "%.0f tr/min".format(it) },
-                        v?.vitesse?.let { "%.0f km/h".format(it) },
-                        v?.rapport?.let { "rapport $it" },
-                        v?.carburant?.let { "essence %.0f %%".format(it) },
-                    ).ifEmpty { listOf("${c.tramesParSeconde} trames/s, rien de décodé") }.joinToString(" · ")
-                },
-            )
-            if (c != null && c.codesDefaut.isNotEmpty()) Text("⚠️ ${c.codesDefaut.size} code(s) défaut", color = MaterialTheme.colorScheme.error)
-            TextButton(onClick = { ouvrir(Ecran.CAN) }) { Text("Détails du bus CAN") }
         }
 
         Carte("Réseau 4G") {
