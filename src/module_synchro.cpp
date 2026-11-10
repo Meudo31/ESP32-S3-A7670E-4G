@@ -8,6 +8,8 @@
 #include <functional>
 #include <math.h>
 #include <time.h>
+#include <esp_heap_caps.h>
+#include <esp_system.h>
 
 #include "certificats_racines.h"
 #include "configuration.h"
@@ -90,6 +92,8 @@ volatile bool     enCours = false;
 volatile bool     demandeManuelle = false;
 volatile bool     interruption = false;
 volatile bool     testDemande = false;
+bool              suspendue = false;           // le module a planté pendant la dernière synchro : plus d'automatique
+const size_t      MEMOIRE_INTERNE_MINIMUM = 60 * 1024;   // en dessous, le Wi-Fi risquerait d'étouffer le Bluetooth
 volatile uint8_t  raisonDeDeconnexion = 0;     // dernier code de l'ESP32 quand la box refuse la connexion
 int               etatDuDernierTest = -1;      // -1 aucun, 0 échec, 1 réussi, 2 en cours (protégé par le verrou)
 String            messageDuDernierTest;        // protégé par le verrou
@@ -1254,6 +1258,28 @@ void testerLaConnexion(const Reglages& r) {
     publierLeTest(reussi ? 1 : 0, message);
 }
 
+// Garde contre les redémarrages en boucle : notée dans la mémoire RTC (qui survit à un plantage,
+// sans user la flash) pendant que le Wi-Fi tourne. Si le module redémarre sur un plantage alors
+// qu'elle est posée, la synchro automatique est suspendue.
+RTC_NOINIT_ATTR uint32_t gardeDuWifi;
+const uint32_t GARDE_POSEE = 0x5A1C0DE5;
+
+void poserLaGarde(bool posee) { gardeDuWifi = posee ? GARDE_POSEE : 0; }
+
+void verifierLaGarde() {
+    const bool posee = gardeDuWifi == GARDE_POSEE;
+    gardeDuWifi = 0;
+    const esp_reset_reason_t raison = esp_reset_reason();
+    const bool plantage = raison == ESP_RST_PANIC || raison == ESP_RST_INT_WDT || raison == ESP_RST_TASK_WDT
+                       || raison == ESP_RST_WDT || raison == ESP_RST_BROWNOUT;
+    if (posee && plantage) {
+        suspendue = true;
+        etatLisible = "Suspendue : le module a redémarré pendant la dernière synchro (" + String(raisonDuDernierRedemarrage())
+                    + "). Appuyer sur Tester ou Synchroniser pour réessayer.";
+        ecrireDansLeJournal("[SYNCHRO] %s", etatLisible.c_str());
+    }
+}
+
 void tacheDeSynchronisation(void*) {
     // Au démarrage, on attend que le reste soit installé (sauf si l'appli demande un test).
     ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(ATTENTE_APRES_LE_DEMARRAGE_MS));
@@ -1264,6 +1290,16 @@ void tacheDeSynchronisation(void*) {
         demandeManuelle = false;
         Reglages r = copieDesReglages();
 
+        if (testDemande || manuelle) {
+            suspendue = false;   // l'utilisateur redemande : on retente
+        }
+        const size_t memoireInterne = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+        if ((testDemande || manuelle) && memoireInterne < MEMOIRE_INTERNE_MINIMUM) {
+            const String m = "Mémoire interne insuffisante (" + String(memoireInterne / 1024) + " Ko libres) : Wi-Fi non lancé pour protéger le Bluetooth.";
+            if (testDemande) publierLeTest(0, m); else noterLEtat(m);
+            testDemande = false;
+            continue;
+        }
         if (testDemande) {
             testDemande = false;
             if (wifiOuvert()) {
@@ -1272,13 +1308,20 @@ void tacheDeSynchronisation(void*) {
             }
             interruption = false;
             enCours = true;
+            poserLaGarde(true);
             testerLaConnexion(r);
+            poserLaGarde(false);
             enCours = false;
             continue;
         }
 
         if (r.wifiNom.length() == 0) { if (manuelle) noterLEtat("Wi-Fi de la maison non réglé"); continue; }
         if (!r.active && !manuelle) continue;
+        if (suspendue && !manuelle) continue;
+        // Recherche automatique seulement quand l'appli n'est pas connectée : le balayage Wi-Fi
+        // occupe la radio partagée et peut faire décrocher le Bluetooth.
+        if (!manuelle && appliConnectee()) continue;
+        if (!manuelle && memoireInterne < MEMOIRE_INTERNE_MINIMUM) continue;
         if (!manuelle && derniereSynchroReussieMs != 0 && millis() - derniereSynchroReussieMs < INTERVALLE_ENTRE_DEUX_SYNCHROS_MS) continue;
         const PositionGPS position = positionGPS();
         if (!manuelle && position.positionValide && position.vitesseKmh > VITESSE_MAXIMUM_POUR_CHERCHER) continue;
@@ -1286,13 +1329,16 @@ void tacheDeSynchronisation(void*) {
 
         interruption = false;
         enCours = true;
+        poserLaGarde(true);
         if (wifiOuvert()) {   // le point d'accès de l'appli est prioritaire
+            poserLaGarde(false);
             enCours = false;
             if (manuelle) noterLEtat("Wi-Fi occupé par l'appli (transfert en cours)");
             continue;
         }
         if (!reseauDeLaMaisonAPortee(r.wifiNom)) {
             eteindreLeWifiDeLaMaison();
+            poserLaGarde(false);
             enCours = false;
             noterLEtat("Wi-Fi « " + r.wifiNom + " » hors de portée", manuelle);
             continue;
@@ -1301,6 +1347,7 @@ void tacheDeSynchronisation(void*) {
         raisonDeDeconnexion = 0;
         if (!seConnecterALaMaison(r)) {
             eteindreLeWifiDeLaMaison();
+            poserLaGarde(false);
             enCours = false;
             noterUneErreur("connexion au Wi-Fi impossible : " + explicationDeLaRaison(raisonDeDeconnexion));
             noterLEtat("Connexion au Wi-Fi impossible");
@@ -1309,6 +1356,7 @@ void tacheDeSynchronisation(void*) {
         ecrireDansLeJournal("[SYNCHRO] Connecté (%s, %d dBm).", WiFi.localIP().toString().c_str(), WiFi.RSSI());
         synchroniser(r);
         eteindreLeWifiDeLaMaison();
+        poserLaGarde(false);
         enCours = false;
     }
 }
@@ -1436,6 +1484,7 @@ bool demarrerModuleSynchro() {
     verrou = xSemaphoreCreateMutex();
     if (verrou == nullptr) return false;
     lireLesReglages();
+    verifierLaGarde();
     WiFi.onEvent([](arduino_event_id_t, arduino_event_info_t info) {
         if (info.wifi_sta_disconnected.reason != 0) raisonDeDeconnexion = info.wifi_sta_disconnected.reason;
     }, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);

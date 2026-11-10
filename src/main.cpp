@@ -110,9 +110,10 @@ void setup() {
     // 5. La liaison avec l'application Android.
     demarrer("Explorateur de fichiers", demarrerModuleExplorateurFichiers);
     demarrer("Mise à jour",             demarrerModuleMiseAJour);
+    // Le Bluetooth d'abord : il a besoin d'un gros bloc de mémoire interne, que le Wi-Fi ne doit pas lui prendre.
+    demarrer("Appli Bluetooth",         demarrerModuleAppli);
     demarrer("Wi-Fi",                   demarrerModuleWifi);
     demarrer("Synchro maison",          demarrerModuleSynchro);
-    demarrer("Appli Bluetooth",         demarrerModuleAppli);
 
     ecrireDansLeJournal("[DEMARRAGE] Terminé : %d tâche(s) lancée(s), %d module(s) en échec.",
                         nombreDeTachesSurveillees(), nombreDeModulesEnEchec);
