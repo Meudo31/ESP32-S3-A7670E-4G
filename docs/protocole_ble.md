@@ -97,6 +97,7 @@ Les arguments sont séparés du nom par un espace, et entre eux par `|`. Les nom
 | `SYNCHRO_SERVEUR adresse\|clé` | API PostgREST / Supabase (`https://<projet>.supabase.co/rest/v1`) ; clé vide = inchangée |
 | `SYNCHRO_GOOGLE id\|secret` | Client OAuth Google ; `SYNCHRO_GOOGLE_JETON jeton` : jeton de rafraîchissement |
 | `SYNCHRO 1\|0` · `SYNCHRO_CAN 0\|1\|2` | Synchro automatique ; trames CAN : 0 carte SD, 1 Google Drive, 2 base |
+| `SYNCHRO_TESTER` | Teste réseau, mot de passe, Internet et compte Google ; résultat dans le message `wifi_test` (`etat` 0 échec, 1 réussi, 2 en cours, `msg` = explication). Lancé aussi après `SYNCHRO_WIFI` et `SYNCHRO_GOOGLE_JETON` |
 | `SYNCHRO_MAINTENANT` · `SYNCHRO_ETAT` | Synchronise tout de suite ; renvoie le message `synchro` (sans aucun secret). Voir docs/synchro_maison.md |
 | `WIFI_OFF` | Ferme le Wi-Fi du module (il se ferme aussi seul après 2 minutes sans requête) |
 | `SON_TEST` | Bip (`AT+SIMTONE`), phrase (`AT+CTTS`) et son SMS ; répond `SON_TEST` avec ce que le modem a accepté |

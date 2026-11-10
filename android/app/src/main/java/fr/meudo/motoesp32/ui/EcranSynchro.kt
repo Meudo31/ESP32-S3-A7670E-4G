@@ -9,6 +9,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
@@ -30,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import fr.meudo.motoesp32.ble.EtatSynchro
 import fr.meudo.motoesp32.ble.MotoBleClient
+import fr.meudo.motoesp32.ble.TestWifi
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -55,10 +58,10 @@ fun EcranSynchro(modifier: Modifier, client: MotoBleClient) {
             return@Column
         }
         CarteEtat(client, s)
-        CarteWifi(client, s)
-        CarteBase(client, s)
+        CarteWifi(client, s, etat.testWifi)
         CarteGoogle(client, s)
         CarteTramesCan(client, s)
+        CarteBase(client, s)
     }
 }
 
@@ -81,8 +84,8 @@ private fun CarteEtat(client: MotoBleClient, s: EtatSynchro) {
             "Dernière synchro réussie",
             if (s.derniereSynchroUtc > 0) SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.FRANCE).format(Date(s.derniereSynchroUtc * 1000)) else "jamais",
         )
-        Ligne("Lignes de journal", s.lignesDeJournal.toString())
-        Ligne("Positions GPS", s.positions.toString())
+        Ligne("Lignes de journal (Sheets)", s.lignesDeJournal.toString())
+        Ligne("Positions GPS (Sheets)", s.positions.toString())
         Ligne("Fichiers CAN (Drive)", s.fichiersCan.toString())
         if (s.tramesCan > 0) Ligne("Trames CAN (base)", s.tramesCan.toString())
         Ligne("Photos", s.photos.toString())
@@ -96,16 +99,57 @@ private fun CarteEtat(client: MotoBleClient, s: EtatSynchro) {
 }
 
 @Composable
-private fun CarteWifi(client: MotoBleClient, s: EtatSynchro) {
+private fun CarteWifi(client: MotoBleClient, s: EtatSynchro, test: TestWifi?) {
     var nom by rememberSaveable(s.wifiNom) { mutableStateOf(s.wifiNom) }
     var motDePasse by rememberSaveable { mutableStateOf("") }
     Carte("Wi-Fi de la maison") {
         OutlinedTextField(nom, { nom = it.take(32) }, label = { Text("Nom du réseau (SSID)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         ChampSecret(motDePasse, { motDePasse = it.take(63) }, if (s.wifiMotDePasseRegle) "Mot de passe (enregistré, vide = inchangé)" else "Mot de passe")
-        Button(
-            onClick = { client.envoyerCommande("SYNCHRO_WIFI", nom.trim(), motDePasse); motDePasse = "" },
-            enabled = nom.isNotBlank() && (nom.trim() != s.wifiNom || motDePasse.isNotEmpty()),
-        ) { Text("Enregistrer") }
+        Text(
+            "Réseau 2,4 GHz (le module ne capte pas le 5 GHz). Enregistrer lance un test : la moto doit être près de la box.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                onClick = { client.envoyerCommande("SYNCHRO_WIFI", nom.trim(), motDePasse); motDePasse = "" },
+                enabled = nom.isNotBlank() && (nom.trim() != s.wifiNom || motDePasse.isNotEmpty()),
+            ) { Text("Enregistrer et tester") }
+            FilledTonalButton(
+                onClick = { client.envoyerCommande("SYNCHRO_TESTER") },
+                enabled = s.wifiNom.isNotEmpty() && test?.enCours != true && !s.enCours,
+            ) { Text("Tester") }
+        }
+        ResultatDuTest(test)
+    }
+}
+
+/** Résultat du test : réseau trouvé ? mot de passe accepté ? Internet ? compte Google ? */
+@Composable
+private fun ResultatDuTest(test: TestWifi?) {
+    if (test == null || test.etat < 0 || test.message.isEmpty()) return
+    val couleurs = MaterialTheme.colorScheme
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = when {
+                test.enCours -> couleurs.surfaceVariant
+                test.reussi -> couleurs.primaryContainer
+                else -> couleurs.errorContainer
+            },
+        ),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                when {
+                    test.enCours -> "⏳ Test en cours…"
+                    test.reussi -> "✅ Connexion réussie"
+                    else -> "❌ Connexion échouée"
+                },
+                style = MaterialTheme.typography.titleSmall,
+            )
+            if (test.enCours) LinearProgressIndicator(Modifier.fillMaxWidth())
+            Text(test.message, style = MaterialTheme.typography.bodyMedium)
+        }
     }
 }
 
@@ -113,10 +157,10 @@ private fun CarteWifi(client: MotoBleClient, s: EtatSynchro) {
 private fun CarteBase(client: MotoBleClient, s: EtatSynchro) {
     var adresse by rememberSaveable(s.adresseApi) { mutableStateOf(s.adresseApi) }
     var cle by rememberSaveable { mutableStateOf("") }
-    Carte("Base de données (journaux et GPS)") {
+    Carte("Facultatif : base de données (serveur maison)") {
         Text(
-            "Supabase : https://<projet>.supabase.co/rest/v1 et la clé « publishable ». " +
-                "Serveur maison : http://192.168.1.x:3000. Voir docs/synchro_maison.md.",
+            "Inutile avec Google. Pour envoyer aussi le journal et le GPS vers une base PostgreSQL : " +
+                "serveur maison http://192.168.1.x:3000, ou Supabase https://<projet>.supabase.co/rest/v1.",
             style = MaterialTheme.typography.bodySmall,
         )
         OutlinedTextField(
@@ -136,10 +180,10 @@ private fun CarteGoogle(client: MotoBleClient, s: EtatSynchro) {
     var identifiant by rememberSaveable { mutableStateOf("") }
     var secret by rememberSaveable { mutableStateOf("") }
     var jeton by rememberSaveable { mutableStateOf("") }
-    Carte("Compte Google (photos et trames CAN)") {
+    Carte("Compte Google (tout part ici)") {
         Text(
-            "Client OAuth et jeton de rafraîchissement créés en suivant docs/synchro_maison.md. " +
-                "Les photos vont dans l'album « Moto ESP32 » de Google Photos.",
+            "Journal et GPS → Google Sheets « Moto ESP32 - année », trames CAN → dossier « Moto ESP32 » du Drive, " +
+                "photos → album « Moto ESP32 » de Google Photos. Où trouver ces trois codes : docs/synchro_maison.md.",
             style = MaterialTheme.typography.bodySmall,
         )
         Ligne("Client OAuth", if (s.clientGoogleRegle) "✅ réglé" else "pas réglé")

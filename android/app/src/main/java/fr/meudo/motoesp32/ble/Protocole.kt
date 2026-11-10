@@ -116,6 +116,7 @@ object Protocole {
                 } else etat.historiqueSignal
                 etat.copy(reseau = r, historiqueSignal = historique)
             }
+            "wifi_test" -> etat.copy(testWifi = TestWifi(j.optInt("etat", -1), j.optString("msg")))
             "synchro" -> etat.copy(synchro = EtatSynchro(
                 active = j.optInt("actif", 1) == 1,
                 modeCan = j.optInt("can", 1),
@@ -477,7 +478,14 @@ data class EtatDuModule(
     val tramesCan: List<TrameCan> = emptyList(),
     val historiqueCan: List<PointCan> = emptyList(),
     val synchro: EtatSynchro? = null,
+    val testWifi: TestWifi? = null,
 )
+
+/** Résultat du test de connexion au Wi-Fi de la maison : etat -1 aucun, 0 échec, 1 réussi, 2 en cours. */
+data class TestWifi(val etat: Int, val message: String) {
+    val enCours: Boolean get() = etat == 2
+    val reussi: Boolean get() = etat == 1
+}
 
 /** Synchronisation au Wi-Fi de la maison (message « synchro », voir module_synchro.cpp). Les secrets ne sont jamais renvoyés. */
 data class EtatSynchro(
