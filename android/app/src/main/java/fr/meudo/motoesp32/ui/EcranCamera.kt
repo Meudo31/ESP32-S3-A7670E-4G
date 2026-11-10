@@ -35,7 +35,7 @@ import fr.meudo.motoesp32.ble.Evenement
 import fr.meudo.motoesp32.ble.MotoBleClient
 import fr.meudo.motoesp32.ble.Protocole
 
-/** Écran « Photo » : prendre une photo (enregistrée sur la carte SD du module) et la voir. */
+/** Écran « Photo » : prendre une photo (enregistrée sur la carte SD du module), la voir, et régler la caméra. */
 @Composable
 fun EcranCamera(modifier: Modifier, client: MotoBleClient) {
     val etat by client.etatModule.collectAsStateWithLifecycle()
@@ -106,5 +106,7 @@ fun EcranCamera(modifier: Modifier, client: MotoBleClient) {
                 }
             }
         }
+
+        ReglagesDeLaCamera(etat.camera, client)
     }
 }

@@ -46,6 +46,7 @@ Chaque notification contient un objet JSON dont le champ `t` donne le type.
 | `carte` | 15 s | `version` (V1/V2), `methode` (comment elle a été détectée), `camera`, `sd`, `sd_type`, `sd_total`, `sd_util`, `heure` (source de l'heure), `vol` |
 | `neo` | 15 s et à chaque changement | `num`, `nom`, `lum` 0-255, `allumee`, `noms` (les 13 animations) |
 | `appel` | 15 s et à chaque changement | `etat` (0 aucun, 1 sonnerie, 2 numérotation, 3 en communication), `num`, `duree` s |
+| `camera` | à la connexion, sur `CAMERA_REGLAGES` et à chaque réglage | `pret` 0/1, `capteur` (OV2640…), `tmax` (plus grande résolution possible), `r` : objet `{nom: valeur}` de tous les réglages, `ns` : réglages refusés par le capteur |
 | `taches` | sur `SYSTEME` | `debut` (1 = nouvelle liste), `l` : `[nom, pile, pile restante, priorité, cœur]` ; la liste arrive en plusieurs messages |
 
 Pour ajouter une donnée : l'ajouter dans la fonction `decrire...()` du module concerné, puis dans `Protocole.appliquer()` côté Android.
@@ -75,6 +76,9 @@ Les arguments sont séparés du nom par un espace, et entre eux par `|`. Les nom
 | `LOGS ON` / `LOGS OFF` | Active ou coupe l'envoi du journal |
 | `HEURE <secondes>` | Donne l'heure du téléphone |
 | `PHOTO` | Prend une photo dans `/photos/jj-mm-aaaa/jj-mm-aaaa_hh-mm-ss_ESP32-A7670.jpg` |
+| `CAMERA_REGLAGES` | Renvoie le message `camera` (tous les réglages) |
+| `CAMERA_REGLER nom\|valeur` | Change un réglage de la caméra, l'applique tout de suite et le garde en mémoire (voir ci-dessous) |
+| `CAMERA_DEFAUT` | Remet tous les réglages de la caméra par défaut |
 | `GPS`, `RESEAU` | Renvoie la position ou l'état du réseau 4G |
 | `SMS_ENVOYER numéro\|texte` | Envoie un SMS (découpé en plusieurs si besoin) |
 | `SMS_LISTE` | Liste les SMS de la carte SIM |
@@ -101,6 +105,31 @@ Les arguments sont séparés du nom par un espace, et entre eux par `|`. Les nom
 | `FICHIER_ENVOYER_ANNULER` | Abandonne l'envoi et efface le fichier partiel |
 
 Pour en ajouter une : une ligne dans le tableau `COMMANDES` de `module_appli.cpp`, puis un bouton dans l'écran Android concerné.
+
+## Réglages de la caméra
+
+Gardés dans la mémoire permanente du module (espace `camera`) et appliqués à chaque démarrage.
+Tableau `REGLAGES` de `src/module_camera.cpp`, repris dans `android/.../ui/ReglagesCamera.kt`.
+
+| Nom | Valeurs | Défaut | Rôle |
+|---|---|---|---|
+| `taille` | 0-13 (jusqu'à `tmax`) | 13 (9 sans PSRAM) | Résolution : 5 = 320×240, 8 = 640×480, 9 = 800×600, 10 = 1024×768, 11 = 1280×720, 12 = 1280×1024, 13 = 1600×1200 |
+| `qualite` | 4-63 | 10 (12 sans PSRAM) | Compression JPEG (4 = meilleure qualité) |
+| `lum`, `contraste`, `satur`, `nettete` | -2 à 2 | 0 | Luminosité, contraste, saturation, netteté (netteté : pas sur l'OV2640) |
+| `debruit` | 0-8 | 0 | Réduction du bruit (pas sur l'OV2640) |
+| `effet` | 0-6 | 0 | Aucun, négatif, noir et blanc, rouge, vert, bleu, sépia |
+| `awb`, `awb_gain` | 0/1 | 1 | Balance des blancs automatique et son gain |
+| `wb_mode` | 0-4 | 0 | Auto, soleil, nuageux, bureau, maison |
+| `aec`, `aec2` | 0/1 | 1, 0 | Exposition automatique, et sa version DSP |
+| `ae_niv` | -2 à 2 | 0 | Correction d'exposition |
+| `aec_val` | 0-1200 | 300 | Exposition manuelle (si `aec` = 0) |
+| `agc` | 0/1 | 1 | Gain automatique |
+| `agc_gain` | 0-30 | 0 | Gain manuel 1x à 31x (si `agc` = 0) |
+| `gain_max` | 0-6 | 0 | Plafond du gain automatique : 2x à 128x |
+| `bpc`, `wpc`, `gamma`, `lenc`, `dcw` | 0/1 | 0, 1, 1, 1, 1 | Corrections : pixels noirs, pixels blancs, gamma, objectif, réduction de taille |
+| `miroir`, `retourne` | 0/1 | 0 | Miroir horizontal, retournement vertical |
+| `mire` | 0/1 | 0 | Barres de couleur de test |
+| `jeter` | 0-10 | 1 | Images jetées avant chaque photo (laisse l'exposition s'ajuster) |
 
 ## Téléchargement d'un fichier de la carte SD
 
