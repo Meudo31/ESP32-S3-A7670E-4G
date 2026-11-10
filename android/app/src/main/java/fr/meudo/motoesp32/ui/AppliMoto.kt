@@ -219,7 +219,7 @@ fun AppliMoto(
 /** Commandes dont on affiche aussi la réussite (les autres ne s'affichent qu'en cas d'erreur). */
 private val COMMANDES_A_CONFIRMER = setOf(
     "FICHIER_RENOMMER", "FICHIER_DEPLACER", "FICHIER_SUPPRIMER", "DOSSIER_CREER", "SMS_SUPPRIMER",
-    "SONS_INSTALLER", "REBOOT", "PING", "APPELER", "SON_TEST", "SON_JOUER", "ALERTES_NUMERO", "ALERTES", "ALERTES_TEST",
+    "SONS_INSTALLER", "REBOOT", "PING", "APPELER", "SON_TEST", "SON_JOUER", "ALERTES_NUMERO", "ALERTES", "ALERTES_TYPE", "ALERTES_TEST",
     "CAN_VITESSE", "CAN_ENREGISTRER", "CAN_EFFACER",
 )
 

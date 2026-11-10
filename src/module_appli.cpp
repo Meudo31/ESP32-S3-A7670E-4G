@@ -112,6 +112,9 @@ void envoyerLaCarteSIM() {
     decrireLaCarteSIMEtLeModem(d);
     d["alerte_num"] = numeroDesAlertes();
     d["alertes"]    = alertesActives() ? 1 : 0;
+    d["al_dem"]     = uneAlerteEstActive(TypeDAlerte::DEMARRAGE) ? 1 : 0;
+    d["al_pos"]     = uneAlerteEstActive(TypeDAlerte::POSITION) ? 1 : 0;
+    d["al_dep"]     = uneAlerteEstActive(TypeDAlerte::DEPLACEMENT) ? 1 : 0;
     envoyerUnDocument(d);
 }
 void envoyerLesNeopixels()   { JsonDocument d; decrireLesNeopixels(d);        envoyerUnDocument(d); }
@@ -359,6 +362,21 @@ void commandeActiverLesAlertes(const char* nom, const ArgumentsDeCommande& argum
     envoyerLaCarteSIM();
 }
 
+// ALERTES_TYPE demarrage|1 (ou position, deplacement ; 0 = coupée) : coupe ou active un seul genre d'alerte.
+void commandeChoisirUnTypeDAlerte(const char* nom, const ArgumentsDeCommande& arguments) {
+    String type = arguments.premier;
+    type.toLowerCase();
+    TypeDAlerte choix;
+    if (type == "demarrage") choix = TypeDAlerte::DEMARRAGE;
+    else if (type == "position") choix = TypeDAlerte::POSITION;
+    else if (type == "deplacement") choix = TypeDAlerte::DEPLACEMENT;
+    else { repondreALAppli(nom, false, "Type : demarrage, position ou deplacement"); return; }
+    const bool active = arguments.second.toInt() != 0;
+    activerUneAlerte(choix, active);
+    repondreALAppli(nom, true, (String("Alerte ") + type + " " + (active ? "activée" : "coupée")).c_str());
+    envoyerLaCarteSIM();
+}
+
 void commandeTesterLesAlertes(const char* nom, const ArgumentsDeCommande&) {
     const bool reussi = envoyerUneAlerteDeTest();
     repondreALAppli(nom, reussi, reussi ? "SMS de test demandé" : "Aucun numéro enregistré");
@@ -486,6 +504,7 @@ const CommandeConnue COMMANDES[] = {
     { "SON_TEST",            commandeTesterLeSon },
     { "ALERTES_NUMERO",      commandeNumeroDesAlertes },
     { "ALERTES",             commandeActiverLesAlertes },
+    { "ALERTES_TYPE",        commandeChoisirUnTypeDAlerte },
     { "ALERTES_TEST",        commandeTesterLesAlertes },
     { "SON_JOUER",           commandeJouerUnSon },
     { "SORTIE_AUDIO",        commandeSortieAudio },

@@ -42,7 +42,7 @@ Chaque notification contient un objet JSON dont le champ `t` donne le type.
 | `sys` | 5 s | `fw`, `build`, `carte`, `puce`, `rev`, `coeurs`, `mhz`, `temp`, `flash`, `flash_mhz`, `prog`, `prog_libre`, `sdk`, `mac`, `part`, `up` s, `reset`, `boots` |
 | `ble` | 5 s | Liaison vue par le module : `rssi` dBm, `int` intervalle ms, `to` délai de coupure s, `deco` nombre de déconnexions, `hist` (4 dernières coupures : heure, raison, durée, signal) |
 | `mem` | 5 s | `ram_total` `ram_libre` `ram_min` `ram_bloc`, `psram_total` `psram_libre` `psram_min` `psram_bloc` (octets) |
-| `sim` | 15 s | `modele`, `logiciel`, `imei`, `voix` (le modem sait téléphoner), `etat`, `iccid`, `imsi`, `num`, `alerte_num`, `alertes` (0/1) |
+| `sim` | 15 s | `modele`, `logiciel`, `imei`, `voix` (le modem sait téléphoner), `etat`, `iccid`, `imsi`, `num`, `alerte_num`, `alertes` (0/1, interrupteur général), `al_dem`, `al_pos`, `al_dep` (0/1 : alerte d'allumage, de position trouvée, de déplacement) |
 | `carte` | 15 s | `version` (V1/V2), `methode` (comment elle a été détectée), `camera`, `sd`, `sd_type`, `sd_total`, `sd_util`, `heure` (source de l'heure), `vol` |
 | `neo` | 15 s et à chaque changement | `num`, `nom`, `lum` 0-255, `allumee`, `noms` (les 13 animations) |
 | `appel` | 15 s et à chaque changement | `etat` (0 aucun, 1 sonnerie, 2 numérotation, 3 en communication), `num`, `duree` s |
@@ -85,8 +85,9 @@ Les arguments sont séparés du nom par un espace, et entre eux par `|`. Les nom
 | `VOLUME 0-5` | Volume du haut-parleur |
 | `ANNONCER texte` | Fait prononcer un texte au haut-parleur |
 | `ALERTES_NUMERO numéro` | Numéro qui reçoit les alertes SMS (vide = aucun) ; gardé dans le module |
-| `ALERTES 0\|1` | Coupe ou active les alertes SMS |
-| `ALERTES_TEST` | Envoie tout de suite le SMS d'état (batterie, réseau, position) |
+| `ALERTES 0\|1` | Coupe ou active tous les SMS automatiques (gardé après redémarrage). Aussi par SMS depuis le numéro des alertes : `Stop` / `Marche` |
+| `ALERTES_TYPE type\|0\|1` | Coupe ou active un seul genre d'alerte : `demarrage`, `position` ou `deplacement` |
+| `ALERTES_TEST` | Envoie tout de suite le SMS d'état (batterie, réseau, position), même alertes coupées |
 | `SON_TEST` | Bip (`AT+SIMTONE`), phrase (`AT+CTTS`) et son SMS ; répond `SON_TEST` avec ce que le modem a accepté |
 | `SON_JOUER chemin` | Copie un son de la carte SD (WAV, AMR, MP3) dans le modem et le joue sur le haut-parleur |
 | `SORTIE_AUDIO 1\|3` | Sortie audio du modem (`AT+CSDVC`) : 3 = haut-parleur (par défaut), 1 = combiné ; mémorisée, puis test |
