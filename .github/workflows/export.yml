@@ -1,0 +1,32 @@
+name: Export binaires alertes
+on:
+  push:
+    branches: [export-binaires-alertes]
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 42796791218
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: fw
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 42796791236
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: app
+      - run: |
+          mkdir -p binaires
+          find fw app -type f
+          cp "$(find fw -name firmware.bin | head -1)" binaires/firmware.bin
+          cp "$(find app -name '*.apk' | head -1)" binaires/MotoESP32.apk
+          git config user.name github-actions
+          git config user.email github-actions@users.noreply.github.com
+          git add -f binaires
+          git commit -m "Binaires des builds 42796791218 et 42796791236" || true
+          git push
