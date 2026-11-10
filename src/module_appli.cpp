@@ -119,7 +119,10 @@ void envoyerLaCarteSIM() {
     d["al_dep"]     = uneAlerteEstActive(TypeDAlerte::DEPLACEMENT) ? 1 : 0;
     envoyerUnDocument(d);
 }
-void envoyerLaSynchro()      { JsonDocument d; decrireLaSynchronisation(d); envoyerUnDocument(d); }
+void envoyerLaSynchro() {
+    JsonDocument d; decrireLaSynchronisation(d); envoyerUnDocument(d);
+    JsonDocument t; decrireLeTestDuWifi(t);      envoyerUnDocument(t);
+}
 void envoyerLesNeopixels()   { JsonDocument d; decrireLesNeopixels(d);        envoyerUnDocument(d); }
 void envoyerLAppelEnCours()  { JsonDocument d; decrireLAppelEnCours(d);       envoyerUnDocument(d); }
 void envoyerLeProcesseur() {
@@ -442,8 +445,9 @@ void commandeOuvrirLeWifi(const char* nom, const ArgumentsDeCommande&) {
 // Un mot de passe ou une clé vide garde l'ancien (l'appli ne les connaît pas).
 void commandeSynchroWifi(const char* nom, const ArgumentsDeCommande& a) {
     choisirLeWifiDeLaMaison(a.premier, a.second);
-    repondreALAppli(nom, true, a.premier.length() ? "Wi-Fi de la maison enregistré" : "Wi-Fi de la maison oublié");
+    repondreALAppli(nom, true, a.premier.length() ? "Wi-Fi de la maison enregistré, test en cours…" : "Wi-Fi de la maison oublié");
     envoyerLaSynchro();
+    if (a.premier.length()) testerLeWifiDeLaMaison();
 }
 void commandeSynchroServeur(const char* nom, const ArgumentsDeCommande& a) {
     if (a.premier.length() && !a.premier.startsWith("http://") && !a.premier.startsWith("https://")) {
@@ -461,8 +465,9 @@ void commandeSynchroGoogle(const char* nom, const ArgumentsDeCommande& a) {
 }
 void commandeSynchroJetonGoogle(const char* nom, const ArgumentsDeCommande& a) {
     choisirLeJetonGoogle(a.tout);
-    repondreALAppli(nom, true, a.tout.length() ? "Jeton Google enregistré" : "Jeton Google oublié");
+    repondreALAppli(nom, true, a.tout.length() ? "Jeton Google enregistré, test en cours…" : "Jeton Google oublié");
     envoyerLaSynchro();
+    if (a.tout.length()) testerLeWifiDeLaMaison();
 }
 void commandeSynchroActive(const char* nom, const ArgumentsDeCommande& a) {
     activerLaSynchronisation(a.premier.toInt() != 0);
@@ -477,6 +482,10 @@ void commandeSynchroCAN(const char* nom, const ArgumentsDeCommande& a) {
 void commandeSynchroMaintenant(const char* nom, const ArgumentsDeCommande&) {
     synchroniserMaintenant();
     repondreALAppli(nom, true, "Recherche du Wi-Fi de la maison…");
+}
+void commandeSynchroTester(const char* nom, const ArgumentsDeCommande&) {
+    testerLeWifiDeLaMaison();
+    repondreALAppli(nom, true, "Test de la connexion en cours…");
 }
 void commandeSynchroEtat(const char* nom, const ArgumentsDeCommande&) {
     envoyerLaSynchro();
@@ -601,6 +610,7 @@ const CommandeConnue COMMANDES[] = {
     { "SYNCHRO_CAN",         commandeSynchroCAN },
     { "SYNCHRO_MAINTENANT",  commandeSynchroMaintenant },
     { "SYNCHRO_ETAT",        commandeSynchroEtat },
+    { "SYNCHRO_TESTER",      commandeSynchroTester },
     { "SON_JOUER",           commandeJouerUnSon },
     { "SORTIE_AUDIO",        commandeSortieAudio },
     { "NEO",                 commandeChoisirLAnimation },

@@ -61,7 +61,7 @@ const char*    FICHIER_DE_PROGRESSION           = DOSSIER_DE_LA_SYNCHRO "/progre
 const char*    DOSSIER_DES_TRACES_GPS           = "/gps";
 const char*    DOSSIER_DES_TRAMES_CAN           = "/can";
 const char*    NOM_DE_L_ALBUM_GOOGLE            = "Moto ESP32";
-const char*    NOM_DU_DOSSIER_DRIVE             = "Moto ESP32 - trames CAN";
+const char*    NOM_DU_DOSSIER_DRIVE             = "Moto ESP32";   // classeurs (journal, GPS) et trames CAN
 const size_t   TAILLE_D_UN_MORCEAU_DRIVE        = 512 * 1024;   // multiple de 256 Kio, exigé par Google Drive
 
 struct Reglages {
@@ -89,6 +89,10 @@ TaskHandle_t      tacheSynchro = nullptr;
 volatile bool     enCours = false;
 volatile bool     demandeManuelle = false;
 volatile bool     interruption = false;
+volatile bool     testDemande = false;
+volatile uint8_t  raisonDeDeconnexion = 0;     // dernier code de l'ESP32 quand la box refuse la connexion
+int               etatDuDernierTest = -1;      // -1 aucun, 0 échec, 1 réussi, 2 en cours (protégé par le verrou)
+String            messageDuDernierTest;        // protégé par le verrou
 
 // ─────────────────────────────── Outils ───────────────────────────────
 
@@ -375,15 +379,21 @@ bool envoyerLaFicheDuFichier(Connexion& c, const Reglages& r, const String& chem
     return insererDansLaTable(c, r, "fichiers", corps, false) != Resultat::ECHEC;
 }
 
-// Convertit une ligne du fichier en une ligne pour la base (objet JSON ou ligne CSV).
+// Convertit une ligne du fichier en une ligne à envoyer (objet JSON, tableau JSON ou ligne CSV).
 // Renvoie false pour ignorer la ligne (en-tête, ligne abîmée).
 typedef std::function<bool(const char* ligne, uint32_t numero, String& sortie)> Convertisseur;
+// Envoie un paquet déjà mis en forme.
+typedef std::function<Resultat(const String& corps)> Envoyeur;
 
-// Envoie la suite d'un fichier texte, par paquets de lignes complètes.
-// Renvoie le nombre de lignes envoyées, ou -1 si la synchronisation doit s'arrêter.
-long envoyerLaSuiteDUnFichier(Connexion& c, const Reglages& r, const FichierTrouve& fichier, const char* table,
-                              bool csv, const char* enteteCSV, const Convertisseur& convertir) {
-    Avancement& avancement = progression[fichier.chemin];
+// Forme d'un paquet : début, séparateur entre les lignes, fin.
+struct FormeDuPaquet { String debut; char separateur; const char* fin; };
+
+// Envoie la suite d'un fichier texte, par paquets de lignes complètes. [cle] repère l'avancement
+// (un même fichier peut partir vers deux destinations). Renvoie le nombre de lignes envoyées,
+// ou -1 si la synchronisation doit s'arrêter.
+long envoyerLaSuiteDUnFichier(const FichierTrouve& fichier, const String& cle, const FormeDuPaquet& forme,
+                              const Convertisseur& convertir, const Envoyeur& envoyer) {
+    Avancement& avancement = progression[cle];
     if (fichier.taille < avancement.octets) avancement = Avancement();   // fichier remplacé : on recommence
     if (fichier.taille == avancement.octets) return 0;
 
@@ -409,8 +419,8 @@ long envoyerLaSuiteDUnFichier(Connexion& c, const Reglages& r, const FichierTrou
         }
 
         String corps;
-        corps.reserve(csv ? utile + utile / 2 : utile * 2);
-        if (csv) { corps += enteteCSV; corps += '\n'; } else corps += '[';
+        corps.reserve(utile * 2);
+        corps += forme.debut;
         uint32_t numero = avancement.lignes;
         int lignesDuPaquet = 0;
         char* debut = tampon;
@@ -423,17 +433,16 @@ long envoyerLaSuiteDUnFichier(Connexion& c, const Reglages& r, const FichierTrou
             numero++;
             String convertie;
             if (*debut && convertir(debut, numero, convertie)) {
-                if (!csv && lignesDuPaquet > 0) corps += ',';
+                if (lignesDuPaquet > 0) corps += forme.separateur;
                 corps += convertie;
-                if (csv) corps += '\n';
                 lignesDuPaquet++;
             }
             debut = finDeLigne + 1;
         }
-        if (!csv) corps += ']';
+        corps += forme.fin;
 
         if (lignesDuPaquet > 0) {
-            const Resultat resultat = insererDansLaTable(c, r, table, corps, csv);
+            const Resultat resultat = envoyer(corps);
             if (resultat == Resultat::ECHEC) { free(tampon); return -1; }
             if (resultat == Resultat::REFUSE) {
                 xSemaphoreTake(verrou, portMAX_DELAY); dernierBilan.erreurs++; xSemaphoreGive(verrou);
@@ -449,7 +458,60 @@ long envoyerLaSuiteDUnFichier(Connexion& c, const Reglages& r, const FichierTrou
     return interruption ? -1 : total;
 }
 
-// ─── Journaux : /journaux/jj-mm-aaaa.log, lignes « hh:mm:ss  texte » ───
+const FormeDuPaquet TABLEAU_JSON = { "[", ',', "]" };
+
+// ─── Lecture des fichiers de la carte ───
+
+// Journal : /journaux/jj-mm-aaaa.log, lignes « hh:mm:ss  texte ». Heure en secondes UTC (0 si inconnue).
+struct LigneDeJournal { time_t heure; String texte; };
+
+LigneDeJournal lireUneLigneDeJournal(const char* ligne, int jour, int mois, int annee) {
+    LigneDeJournal l = { 0, String() };
+    int h = 0, mi = 0, s = 0;
+    const char* texte = ligne;
+    if (sscanf(ligne, "%2d:%2d:%2d", &h, &mi, &s) == 3 && strlen(ligne) >= 8) {
+        texte = ligne + 8;
+        while (*texte == ' ') texte++;
+        if (annee > 2000) l.heure = heureLocaleEnSecondes(jour, mois, annee, h, mi, s);
+    }
+    l.texte = texteUTF8Propre(texte);
+    return l;
+}
+
+// Trace GPS : /gps/jj-mm-aaaa.csv, lignes « secondesUTC;lat;lon;alt;km/h;cap;satellites;hdop ».
+struct PointLu { time_t heure; double latitude, longitude; float valeurs[5]; };   // altitude, km/h, cap, satellites, hdop (NAN = inconnu)
+
+bool lireUnPointGPS(const char* ligne, PointLu& p) {
+    if (!isdigit((unsigned char)ligne[0])) return false;   // en-tête
+    String champs[8];
+    String copie(ligne);
+    int n = 0, debut = 0;
+    while (n < 8) {
+        const int pv = copie.indexOf(';', debut);
+        champs[n++] = pv < 0 ? copie.substring(debut) : copie.substring(debut, pv);
+        if (pv < 0) break;
+        debut = pv + 1;
+    }
+    if (n < 3) return false;
+    p.heure = (time_t)strtoul(champs[0].c_str(), nullptr, 10);
+    p.latitude = strtod(champs[1].c_str(), nullptr);
+    p.longitude = strtod(champs[2].c_str(), nullptr);
+    if (p.heure < 1600000000 || !isfinite(p.latitude) || !isfinite(p.longitude) || fabs(p.latitude) > 90 || fabs(p.longitude) > 180) return false;
+    for (int i = 0; i < 5; i++) p.valeurs[i] = 3 + i < n && champs[3 + i].length() ? strtof(champs[3 + i].c_str(), nullptr) : NAN;
+    return true;
+}
+
+// Heure locale lisible, triable, comprise par Google Sheets : « 2026-11-10 14:05:09 ».
+String heureLocaleLisible(time_t secondes) {
+    if (secondes <= 0) return "";
+    struct tm t;
+    localtime_r(&secondes, &t);
+    char texte[24];
+    strftime(texte, sizeof(texte), "%Y-%m-%d %H:%M:%S", &t);
+    return texte;
+}
+
+// ─── Base de données (facultative) : journaux ───
 
 long envoyerLesJournaux(Connexion& c, const Reglages& r) {
     long total = 0;
@@ -460,72 +522,48 @@ long envoyerLesJournaux(Connexion& c, const Reglages& r) {
         const time_t minuit = dateDuNomDeFichier(nom, false);
         int jour = 0, mois = 0, annee = 0;
         sscanf(nom.c_str(), "%d-%d-%d", &jour, &mois, &annee);
+        if (minuit == 0) annee = 0;
         if (!envoyerLaFicheDuFichier(c, r, fichier.chemin, "journal", minuit, -1, 0)) return -1;
         const String identifiant = nombreLong(empreinteDuChemin(fichier.chemin));
-        const long envoyees = envoyerLaSuiteDUnFichier(c, r, fichier, "journaux", false, nullptr,
+        const long envoyees = envoyerLaSuiteDUnFichier(fichier, fichier.chemin, TABLEAU_JSON,
             [&](const char* ligne, uint32_t numero, String& sortie) {
-                int h = 0, mi = 0, s = 0;
-                const char* texte = ligne;
+                const LigneDeJournal l = lireUneLigneDeJournal(ligne, jour, mois, annee);
                 JsonDocument d;
                 d["fichier_id"] = serialized(identifiant);
                 d["ligne"] = numero;
-                if (sscanf(ligne, "%2d:%2d:%2d", &h, &mi, &s) == 3 && strlen(ligne) >= 8) {
-                    texte = ligne + 8;
-                    while (*texte == ' ') texte++;
-                    if (minuit > 0) d["horodatage"] = dateISO(heureLocaleEnSecondes(jour, mois, annee, h, mi, s));
-                    else            d["horodatage"] = nullptr;
-                } else {
-                    d["horodatage"] = nullptr;
-                }
-                d["texte"] = texteUTF8Propre(texte);
+                if (l.heure > 0) d["horodatage"] = dateISO(l.heure); else d["horodatage"] = nullptr;
+                d["texte"] = l.texte;
                 serializeJson(d, sortie);
                 return true;
-            });
+            },
+            [&](const String& corps) { return insererDansLaTable(c, r, "journaux", corps, false); });
         if (envoyees < 0) return -1;
         total += envoyees;
     }
     return total;
 }
 
-// ─── Trace GPS : /gps/jj-mm-aaaa.csv, lignes « secondesUTC;lat;lon;alt;km/h;cap;satellites;hdop » ───
+// ─── Base de données (facultative) : trace GPS ───
 
 long envoyerLesPositions(Connexion& c, const Reglages& r) {
     long total = 0;
+    static const char* NOMS[5] = { "altitude", "vitesse_kmh", "cap", "satellites", "hdop" };
     for (const FichierTrouve& fichier : fichiersDuDossier(DOSSIER_DES_TRACES_GPS, ".csv")) {
         if (interruption) return -1;
         if (progression[fichier.chemin].octets >= fichier.taille) continue;
-        const long envoyees = envoyerLaSuiteDUnFichier(c, r, fichier, "positions_gps", false, nullptr,
+        const long envoyees = envoyerLaSuiteDUnFichier(fichier, fichier.chemin, TABLEAU_JSON,
             [](const char* ligne, uint32_t, String& sortie) {
-                if (!isdigit((unsigned char)ligne[0])) return false;   // en-tête
-                String champs[8];
-                String copie(ligne);
-                int n = 0, debut = 0;
-                while (n < 8) {
-                    const int pv = copie.indexOf(';', debut);
-                    champs[n++] = pv < 0 ? copie.substring(debut) : copie.substring(debut, pv);
-                    if (pv < 0) break;
-                    debut = pv + 1;
-                }
-                if (n < 3) return false;
-                const time_t secondes = (time_t)strtoul(champs[0].c_str(), nullptr, 10);
-                const double lat = strtod(champs[1].c_str(), nullptr), lon = strtod(champs[2].c_str(), nullptr);
-                if (secondes < 1600000000 || !isfinite(lat) || !isfinite(lon) || fabs(lat) > 90 || fabs(lon) > 180) return false;
+                PointLu p;
+                if (!lireUnPointGPS(ligne, p)) return false;
                 JsonDocument d;
-                d["horodatage"] = dateISO(secondes);
-                d["latitude"]   = serialized(String(lat, 6));
-                d["longitude"]  = serialized(String(lon, 6));
-                auto nombre = [&](const char* cle, int i) {
-                    const float v = i < n && champs[i].length() ? strtof(champs[i].c_str(), nullptr) : NAN;
-                    if (isfinite(v)) d[cle] = v; else d[cle] = nullptr;
-                };
-                nombre("altitude", 3);
-                nombre("vitesse_kmh", 4);
-                nombre("cap", 5);
-                nombre("satellites", 6);
-                nombre("hdop", 7);
+                d["horodatage"] = dateISO(p.heure);
+                d["latitude"]   = serialized(String(p.latitude, 6));
+                d["longitude"]  = serialized(String(p.longitude, 6));
+                for (int i = 0; i < 5; i++) { if (isfinite(p.valeurs[i])) d[NOMS[i]] = p.valeurs[i]; else d[NOMS[i]] = nullptr; }
                 serializeJson(d, sortie);
                 return true;
-            });
+            },
+            [&](const String& corps) { return insererDansLaTable(c, r, "positions_gps", corps, false); });
         if (envoyees < 0) return -1;
         total += envoyees;
     }
@@ -567,8 +605,8 @@ long envoyerLesTramesCAN(Connexion& c, const Reglages& r) {
             if (!envoyerLaFicheDuFichier(c, r, fichier.chemin, "can", debut, debutMs, kbits)) return -1;
             const String identifiant = nombreLong(empreinteDuChemin(fichier.chemin));
             noterLEtat("Trames CAN : " + fichier.chemin, false);
-            const long envoyees = envoyerLaSuiteDUnFichier(c, r, fichier, "trames_can", true,
-                "fichier_id,ligne,ms,identifiant,etendue,dlc,donnees",
+            const long envoyees = envoyerLaSuiteDUnFichier(fichier, fichier.chemin,
+                FormeDuPaquet{ "fichier_id,ligne,ms,identifiant,etendue,dlc,donnees\n", '\n', "\n" },
                 [&](const char* ligne, uint32_t numero, String& sortie) {
                     if (!isdigit((unsigned char)ligne[0])) return false;   // commentaires et en-tête
                     const char* champs[5];
@@ -593,7 +631,8 @@ long envoyerLesTramesCAN(Connexion& c, const Reglages& r) {
                     sortie += ','; sortie.concat(champs[3], longueurs[3]);
                     sortie += ','; sortie.concat(champs[4], longueurs[4]);
                     return true;
-                });
+                },
+                [&](const String& corps) { return insererDansLaTable(c, r, "trames_can", corps, true); });
             if (envoyees < 0) return -1;
             total += envoyees;
         }
@@ -604,6 +643,7 @@ long envoyerLesTramesCAN(Connexion& c, const Reglages& r) {
 // ─────────────────────────────── Google Photos ───────────────────────────────
 
 String   jetonDAccesGoogle;
+String   raisonGoogle;   // pourquoi le dernier jeton a été refusé
 uint32_t jetonValableJusquaMs = 0;
 
 bool obtenirUnJetonGoogle(Connexion& c, const Reglages& r) {
@@ -615,7 +655,13 @@ bool obtenirUnJetonGoogle(Connexion& c, const Reglages& r) {
                                  { { "Content-Type", "application/x-www-form-urlencoded" } }, &reponse, false);
     JsonDocument d;
     if (code != 200 || deserializeJson(d, reponse) || !d["access_token"].is<const char*>()) {
-        noterUneErreur("Google refuse le jeton (HTTP " + String(code) + ") " + reponse.substring(0, 120));
+        const String erreur = d["error"] | "";
+        if (code < 0)                          raisonGoogle = "Google injoignable (pas d'Internet ?)";
+        else if (erreur == "invalid_client")   raisonGoogle = "ID client ou code secret faux (Google Cloud > Identifiants)";
+        else if (erreur == "invalid_grant")    raisonGoogle = "jeton refusé : expiré, révoqué ou créé avec un autre client. Refaire l'étape OAuth Playground";
+        else if (erreur == "unauthorized_client") raisonGoogle = "ce client n'a pas le droit d'utiliser ce jeton (refaire le jeton avec ce client)";
+        else                                   raisonGoogle = "Google refuse la connexion (HTTP " + String(code) + " " + erreur + ")";
+        noterUneErreur(raisonGoogle);
         return false;
     }
     jetonDAccesGoogle = d["access_token"].as<const char*>();
@@ -708,7 +754,7 @@ Resultat envoyerUnePhotoAGoogle(Connexion& c, const Reglages& r, const FichierTr
 
 // ─────────────────────────────── Google Drive (trames CAN brutes) ───────────────────────────────
 
-// Crée le dossier « Moto ESP32 - trames CAN » la première fois (son identifiant est gardé en mémoire).
+// Crée le dossier « Moto ESP32 » de Google Drive la première fois (son identifiant est gardé en mémoire).
 bool preparerLeDossierDrive(Connexion& c, Reglages& r) {
     if (r.dossierDrive.length() > 0) return true;
     JsonDocument demande;
@@ -820,6 +866,165 @@ long envoyerLesTramesCANADrive(Connexion& base, Reglages& r) {
     return total;
 }
 
+// ─────────────────────────────── Google Sheets (journal et trace GPS) ───────────────────────────────
+// Un classeur par année dans le dossier « Moto ESP32 » : « Moto ESP32 - 2026 », onglets « Journal » et « GPS ».
+// (Un classeur Google tient 10 millions de cellules : largement une année de sorties.)
+
+const char* ENTETES_DU_JOURNAL = "[[\"Date et heure\",\"Texte\",\"Fichier\"]]";
+const char* ENTETES_DU_GPS     = "[[\"Date et heure\",\"Latitude\",\"Longitude\",\"Altitude (m)\",\"Vitesse (km/h)\",\"Cap (°)\",\"Satellites\",\"HDOP\",\"Carte\"]]";
+
+Resultat ajouterDesLignesAuClasseur(Connexion& c, const String& classeur, const char* onglet, const String& corps) {
+    const String url = "https://sheets.googleapis.com/v4/spreadsheets/" + classeur + "/values/" + onglet
+                     + ":append?valueInputOption=RAW&insertDataOption=INSERT_ROWS";
+    for (int essai = 0; essai < 3; essai++) {
+        String reponse;
+        const int code = requeteHTTP(c, url, "POST", (const uint8_t*)corps.c_str(), corps.length(),
+                                     { { "Content-Type", "application/json" }, { "Authorization", "Bearer " + jetonDAccesGoogle } },
+                                     &reponse, true);
+        if (code == 200) return Resultat::REUSSI;
+        if (code == 429) { vTaskDelay(pdMS_TO_TICKS(30000)); continue; }   // trop de requêtes par minute : on patiente
+        noterUneErreur(String("Google Sheets (") + onglet + ") : HTTP " + code + " " + reponse.substring(0, 120));
+        return code == 400 ? Resultat::REFUSE : Resultat::ECHEC;
+    }
+    return Resultat::ECHEC;
+}
+
+// Identifiant du classeur de l'année (créé la première fois et gardé en mémoire), vide en cas d'échec.
+String classeurDeLAnnee(Connexion& c, Reglages& r, int annee) {
+    char cle[12];
+    snprintf(cle, sizeof(cle), "s%d", annee);
+    Preferences memoire;
+    memoire.begin("synchro", true);
+    String id = memoire.getString(cle, "");
+    memoire.end();
+    if (id.length() > 0) return id;
+
+    JsonDocument demande;
+    demande["properties"]["title"] = String("Moto ESP32 - ") + annee;
+    demande["properties"]["locale"] = "fr_FR";
+    demande["properties"]["timeZone"] = "Europe/Paris";
+    JsonArray onglets = demande["sheets"].to<JsonArray>();
+    onglets.add<JsonObject>()["properties"]["title"] = "Journal";
+    onglets.add<JsonObject>()["properties"]["title"] = "GPS";
+    String corps, reponse;
+    serializeJson(demande, corps);
+    Connexion creation;
+    preparerLaConnexion(creation);
+    const int code = requeteHTTP(creation, "https://sheets.googleapis.com/v4/spreadsheets", "POST", (const uint8_t*)corps.c_str(), corps.length(),
+                                 { { "Content-Type", "application/json" }, { "Authorization", "Bearer " + jetonDAccesGoogle } },
+                                 &reponse, false);
+    JsonDocument d;
+    if (code != 200 || deserializeJson(d, reponse) || !d["spreadsheetId"].is<const char*>()) {
+        noterUneErreur("classeur Google Sheets non créé (HTTP " + String(code) + ") " + reponse.substring(0, 100)
+                       + (code == 403 ? " : activer l'API Google Sheets" : ""));
+        return "";
+    }
+    id = d["spreadsheetId"].as<const char*>();
+    // Rangé dans le dossier « Moto ESP32 » (au mieux : s'il reste à la racine du Drive, ce n'est pas grave).
+    if (preparerLeDossierDrive(creation, r)) {
+        requeteHTTP(creation, "https://www.googleapis.com/drive/v3/files/" + id + "?addParents=" + r.dossierDrive + "&removeParents=root",
+                    "PATCH", (const uint8_t*)"{}", 2,
+                    { { "Content-Type", "application/json" }, { "Authorization", "Bearer " + jetonDAccesGoogle } }, nullptr, false);
+    }
+    ajouterDesLignesAuClasseur(c, id, "Journal", String("{\"values\":") + ENTETES_DU_JOURNAL + "}");
+    ajouterDesLignesAuClasseur(c, id, "GPS", String("{\"values\":") + ENTETES_DU_GPS + "}");
+    memoire.begin("synchro", false);
+    memoire.putString(cle, id);
+    memoire.end();
+    ecrireDansLeJournal("[SYNCHRO] Classeur Google Sheets « Moto ESP32 - %d » créé.", annee);
+    return id;
+}
+
+int anneeDuNomDeFichier(const String& nom) {
+    int j = 0, m = 0, a = 0;
+    if (sscanf(nom.c_str(), "%d-%d-%d", &j, &m, &a) == 3 && a > 2020) return a;
+    if (!lHeureEstConnue()) return 0;
+    const time_t maintenant = time(nullptr);
+    struct tm t;
+    localtime_r(&maintenant, &t);
+    return t.tm_year + 1900;
+}
+
+const FormeDuPaquet LIGNES_DE_CLASSEUR = { "{\"values\":[", ',', "]}" };
+
+long envoyerLeJournalAuClasseur(Connexion& c, Reglages& r) {
+    long total = 0;
+    for (const FichierTrouve& fichier : fichiersDuDossier(DOSSIER_DES_JOURNAUX, ".log")) {
+        if (interruption) return -1;
+        const String cle = "sheets:" + fichier.chemin;
+        if (progression[cle].octets >= fichier.taille) continue;
+        const String nom = nomSansDossier(fichier.chemin);
+        const int annee = anneeDuNomDeFichier(nom);
+        if (annee == 0) continue;   // journal sans date, et heure toujours inconnue : plus tard
+        const String classeur = classeurDeLAnnee(c, r, annee);
+        if (classeur.length() == 0) return -1;
+        int jour = 0, mois = 0, a = 0;
+        if (sscanf(nom.c_str(), "%d-%d-%d", &jour, &mois, &a) != 3) a = 0;
+        const long envoyees = envoyerLaSuiteDUnFichier(fichier, cle, LIGNES_DE_CLASSEUR,
+            [&](const char* ligne, uint32_t, String& sortie) {
+                const LigneDeJournal l = lireUneLigneDeJournal(ligne, jour, mois, a);
+                JsonDocument d;
+                JsonArray rangee = d.to<JsonArray>();
+                rangee.add(heureLocaleLisible(l.heure));
+                rangee.add(l.texte);
+                rangee.add(nom);
+                serializeJson(d, sortie);
+                return true;
+            },
+            [&](const String& corps) { return ajouterDesLignesAuClasseur(c, classeur, "Journal", corps); });
+        if (envoyees < 0) return -1;
+        total += envoyees;
+    }
+    return total;
+}
+
+long envoyerLaTraceAuClasseur(Connexion& c, Reglages& r) {
+    long total = 0;
+    for (const FichierTrouve& fichier : fichiersDuDossier(DOSSIER_DES_TRACES_GPS, ".csv")) {
+        if (interruption) return -1;
+        const String cle = "sheets:" + fichier.chemin;
+        if (progression[cle].octets >= fichier.taille) continue;
+        const int annee = anneeDuNomDeFichier(nomSansDossier(fichier.chemin));
+        if (annee == 0) continue;
+        const String classeur = classeurDeLAnnee(c, r, annee);
+        if (classeur.length() == 0) return -1;
+        const long envoyees = envoyerLaSuiteDUnFichier(fichier, cle, LIGNES_DE_CLASSEUR,
+            [](const char* ligne, uint32_t, String& sortie) {
+                PointLu p;
+                if (!lireUnPointGPS(ligne, p)) return false;
+                JsonDocument d;
+                JsonArray rangee = d.to<JsonArray>();
+                rangee.add(heureLocaleLisible(p.heure));
+                rangee.add(serialized(String(p.latitude, 6)));
+                rangee.add(serialized(String(p.longitude, 6)));
+                for (int i = 0; i < 5; i++) { if (isfinite(p.valeurs[i])) rangee.add(p.valeurs[i]); else rangee.add(""); }
+                rangee.add("https://maps.google.com/?q=" + String(p.latitude, 6) + "," + String(p.longitude, 6));
+                serializeJson(d, sortie);
+                return true;
+            },
+            [&](const String& corps) { return ajouterDesLignesAuClasseur(c, classeur, "GPS", corps); });
+        if (envoyees < 0) return -1;
+        total += envoyees;
+    }
+    return total;
+}
+
+long envoyerAuxClasseursGoogle(Reglages& r, Bilan& bilan) {
+    Connexion jeton, feuilles;
+    preparerLaConnexion(jeton);
+    preparerLaConnexion(feuilles);
+    if (!obtenirUnJetonGoogle(jeton, r)) return -1;
+    noterLEtat("Journal vers Google Sheets", false);
+    long n = envoyerLeJournalAuClasseur(feuilles, r);
+    if (n < 0) return -1;
+    bilan.journaux += n;
+    noterLEtat("Trace GPS vers Google Sheets", false);
+    n = envoyerLaTraceAuClasseur(feuilles, r);
+    if (n < 0) return -1;
+    bilan.positions += n;
+    return 0;
+}
+
 long envoyerLesPhotos(Connexion& base, Reglages& r) {
     Connexion google;
     preparerLaConnexion(google);
@@ -914,11 +1119,12 @@ void synchroniser(Reglages& r) {
         if (n >= 0 && r.modeCAN == 2) { n = envoyerLesTramesCAN(base, r); if (n >= 0) bilan.trames = n; }
     }
     if (n >= 0 && googleRegle) {
-        n = envoyerLesPhotos(base, r);
+        n = envoyerAuxClasseursGoogle(r, bilan);
+        if (n >= 0) n = envoyerLesPhotos(base, r);
         if (n >= 0) bilan.photos = n;
         if (n >= 0 && r.modeCAN == 1) { n = envoyerLesTramesCANADrive(base, r); if (n >= 0) bilan.fichiersCAN = n; }
     }
-    if (!baseReglee && !googleRegle) noterUneErreur("ni base de données ni compte Google réglés");
+    if (!baseReglee && !googleRegle) noterUneErreur("compte Google pas réglé (écran Synchro de l'appli)");
     const bool reussie = n >= 0 && (baseReglee || googleRegle);
 
     xSemaphoreTake(verrou, portMAX_DELAY);
@@ -937,13 +1143,139 @@ void synchroniser(Reglages& r) {
     noterLEtat(resume);
 }
 
+// ─────────────────────────────── Test de la connexion (après la saisie dans l'appli) ───────────────────────────────
+
+// Coupe un texte UTF-8 à [octets] au plus sans casser un caractère accentué.
+String couperProprement(const String& texte, size_t octets) {
+    if (texte.length() <= octets) return texte;
+    size_t fin = octets;
+    while (fin > 0 && (texte[fin] & 0xC0) == 0x80) fin--;
+    return texte.substring(0, fin) + "…";
+}
+
+void publierLeTest(int etat, const String& message) {
+    xSemaphoreTake(verrou, portMAX_DELAY);
+    etatDuDernierTest = etat;
+    messageDuDernierTest = couperProprement(message, 360);
+    xSemaphoreGive(verrou);
+    if (etat != 2) ecrireDansLeJournal("[SYNCHRO] Test du Wi-Fi : %s", message.c_str());
+    JsonDocument d;
+    decrireLeTestDuWifi(d);
+    publierUnEvenementVersLAppli(d);
+}
+
+// Traduit le code que l'ESP32 reçoit quand la connexion échoue.
+String explicationDeLaRaison(uint8_t raison) {
+    switch (raison) {
+        case WIFI_REASON_AUTH_FAIL:
+        case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
+        case WIFI_REASON_HANDSHAKE_TIMEOUT:
+        case WIFI_REASON_AUTH_EXPIRE:
+            return "mot de passe refusé par la box (vérifie majuscules, chiffres et caractères spéciaux).";
+        case WIFI_REASON_NO_AP_FOUND:
+            return "la box ne répond plus, ou elle n'accepte que le WPA3 (mettre la box en mode WPA2/WPA3 mixte).";
+        case WIFI_REASON_ASSOC_TOOMANY:
+            return "la box a déjà trop d'appareils connectés.";
+        case WIFI_REASON_ASSOC_FAIL:
+        case WIFI_REASON_CONNECTION_FAIL:
+            return "la box refuse le module (filtrage par adresse MAC activé ?).";
+        case WIFI_REASON_BEACON_TIMEOUT:
+            return "signal perdu pendant la connexion : rapprocher la moto de la box.";
+        case 0:
+            return "pas de réponse de la box en 20 s (signal trop faible ?).";
+        default:
+            return "refus de la box (code " + String(raison) + ").";
+    }
+}
+
+void testerLaConnexion(const Reglages& r) {
+    if (r.wifiNom.length() == 0) { publierLeTest(0, "Aucun Wi-Fi de la maison n'est réglé."); return; }
+    publierLeTest(2, "Recherche du réseau « " + r.wifiNom + " »…");
+    WiFi.mode(WIFI_STA);
+    const int nombre = WiFi.scanNetworks(false, false, false, 200);
+    int trouve = -1, ressemblant = -1;
+    String vus;
+    for (int i = 0; i < nombre; i++) {
+        const String nom = WiFi.SSID(i);
+        if (nom == r.wifiNom) { if (trouve < 0) trouve = i; continue; }   // résultats triés du plus fort au plus faible
+        String a = nom, b = r.wifiNom;
+        a.trim(); b.trim(); a.toLowerCase(); b.toLowerCase();
+        if (ressemblant < 0 && a == b) ressemblant = i;
+        if (nom.length() > 0 && vus.length() < 140 && vus.indexOf("« " + nom + " »") < 0) vus += (vus.length() ? ", « " : "« ") + nom + " »";
+    }
+    if (trouve < 0) {
+        String message;
+        if (nombre <= 0)          message = "Aucun réseau Wi-Fi capté : moto trop loin de la box ?";
+        else if (ressemblant >= 0) message = "Réseau « " + r.wifiNom + " » introuvable, mais « " + WiFi.SSID(ressemblant)
+                                           + " » existe : vérifie les majuscules et les espaces.";
+        else message = "Réseau « " + r.wifiNom + " » introuvable. Nom mal écrit, box qui n'émet qu'en 5 GHz "
+                       "(le module ne capte que le 2,4 GHz), ou moto trop loin. Réseaux captés : " + vus + ".";
+        WiFi.scanDelete();
+        eteindreLeWifiDeLaMaison();
+        publierLeTest(0, message);
+        return;
+    }
+    const int signal = WiFi.RSSI(trouve);
+    const int canal = WiFi.channel(trouve);
+    const wifi_auth_mode_t securite = WiFi.encryptionType(trouve);
+    WiFi.scanDelete();
+    publierLeTest(2, "Réseau trouvé (signal " + String(signal) + " dBm, canal " + String(canal) + "). Connexion…");
+
+    raisonDeDeconnexion = 0;
+    if (!seConnecterALaMaison(r)) {
+        String message = "Connexion impossible : " + explicationDeLaRaison(raisonDeDeconnexion);
+        if (securite == WIFI_AUTH_OPEN && r.wifiMotDePasse.length() > 0) message += " (Ce réseau est ouvert : laisser le mot de passe vide.)";
+        if (signal < -80) message += " Signal faible (" + String(signal) + " dBm).";
+        eteindreLeWifiDeLaMaison();
+        publierLeTest(0, message);
+        return;
+    }
+    String message = "Wi-Fi OK (adresse " + WiFi.localIP().toString() + ", signal " + String(WiFi.RSSI()) + " dBm). ";
+    publierLeTest(2, message + "Test d'Internet…");
+    Connexion c;
+    preparerLaConnexion(c);
+    String reponse;
+    const int code = requeteHTTP(c, "http://connectivitycheck.gstatic.com/generate_204", "GET", nullptr, 0, {}, &reponse, false);
+    if (code != 204) {
+        eteindreLeWifiDeLaMaison();
+        publierLeTest(0, message + "Mais pas d'accès à Internet (" + (code < 0 ? reponse : "HTTP " + String(code)) + ").");
+        return;
+    }
+    message += "Internet OK. ";
+    bool reussi = true;
+    if (r.googleId.length() > 0 && r.googleJeton.length() > 0) {
+        jetonDAccesGoogle = "";   // on vérifie vraiment les identifiants
+        if (obtenirUnJetonGoogle(c, r)) message += "Compte Google OK : la synchro peut démarrer.";
+        else { message += "Compte Google refusé : " + raisonGoogle; reussi = false; }
+    } else {
+        message += "Compte Google pas encore réglé.";
+    }
+    eteindreLeWifiDeLaMaison();
+    publierLeTest(reussi ? 1 : 0, message);
+}
+
 void tacheDeSynchronisation(void*) {
-    vTaskDelay(pdMS_TO_TICKS(ATTENTE_APRES_LE_DEMARRAGE_MS));
+    // Au démarrage, on attend que le reste soit installé (sauf si l'appli demande un test).
+    ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(ATTENTE_APRES_LE_DEMARRAGE_MS));
+    xTaskNotifyGive(tacheSynchro);
     for (;;) {
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(INTERVALLE_DE_RECHERCHE_MS));
         const bool manuelle = demandeManuelle;
         demandeManuelle = false;
         Reglages r = copieDesReglages();
+
+        if (testDemande) {
+            testDemande = false;
+            if (wifiOuvert()) {
+                publierLeTest(0, "Le Wi-Fi du module sert à un transfert de l'appli : réessayer dans 2 minutes.");
+                continue;
+            }
+            interruption = false;
+            enCours = true;
+            testerLaConnexion(r);
+            enCours = false;
+            continue;
+        }
 
         if (r.wifiNom.length() == 0) { if (manuelle) noterLEtat("Wi-Fi de la maison non réglé"); continue; }
         if (!r.active && !manuelle) continue;
@@ -966,10 +1298,11 @@ void tacheDeSynchronisation(void*) {
             continue;
         }
         noterLEtat("Connexion au Wi-Fi « " + r.wifiNom + " »");
+        raisonDeDeconnexion = 0;
         if (!seConnecterALaMaison(r)) {
             eteindreLeWifiDeLaMaison();
             enCours = false;
-            noterUneErreur("connexion au Wi-Fi impossible (mot de passe ?)");
+            noterUneErreur("connexion au Wi-Fi impossible : " + explicationDeLaRaison(raisonDeDeconnexion));
             noterLEtat("Connexion au Wi-Fi impossible");
             continue;
         }
@@ -1052,6 +1385,20 @@ void synchroniserMaintenant() {
     if (tacheSynchro != nullptr) xTaskNotifyGive(tacheSynchro);
 }
 
+void testerLeWifiDeLaMaison() {
+    testDemande = true;
+    if (tacheSynchro != nullptr) xTaskNotifyGive(tacheSynchro);
+}
+
+void decrireLeTestDuWifi(JsonDocument& d) {
+    d["t"] = "wifi_test";
+    if (verrou == nullptr) { d["etat"] = -1; return; }
+    xSemaphoreTake(verrou, portMAX_DELAY);
+    d["etat"] = etatDuDernierTest;
+    d["msg"]  = messageDuDernierTest;
+    xSemaphoreGive(verrou);
+}
+
 void interrompreLaSynchronisation() {
     if (!enCours) return;
     interruption = true;
@@ -1089,6 +1436,9 @@ bool demarrerModuleSynchro() {
     verrou = xSemaphoreCreateMutex();
     if (verrou == nullptr) return false;
     lireLesReglages();
+    WiFi.onEvent([](arduino_event_id_t, arduino_event_info_t info) {
+        if (info.wifi_sta_disconnected.reason != 0) raisonDeDeconnexion = info.wifi_sta_disconnected.reason;
+    }, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
     // Les échanges TLS demandent une grosse pile.
     return creerTacheSurveillee(tacheDeSynchronisation, "Synchro", 16384, PRIORITE_BASSE, COEUR_TRAITEMENTS, &tacheSynchro);
 }

@@ -8,21 +8,16 @@
 
      carte SD                              destination
      ───────────────────────────────────   ────────────────────────────────────
-     /journaux/jj-mm-aaaa.log              table journaux        (base de données)
-     /gps/jj-mm-aaaa.csv                   table positions_gps   (base de données)
-     /can/jj-mm-aaaa/*.csv                 Google Drive, dossier « Moto ESP32 - trames CAN »
-                                           (ou table trames_can pour un serveur maison)
-     /photos/jj-mm-aaaa/*.jpg              Google Photos (album « Moto ESP32 »)
-                                           + table photos (lien vers la photo)
+     /journaux/jj-mm-aaaa.log              Google Sheets « Moto ESP32 - <année> », onglet Journal
+     /gps/jj-mm-aaaa.csv                   Google Sheets « Moto ESP32 - <année> », onglet GPS
+     /can/jj-mm-aaaa/*.csv                 Google Drive, dossier « Moto ESP32 » (fichiers CSV entiers)
+     /photos/jj-mm-aaaa/*.jpg              Google Photos, album « Moto ESP32 »
 
-   Choix de Meudo (10/11/2026) : tout en cloud gratuit. Les tables vont chez
-   Supabase (offre gratuite : 500 Mo), les photos chez Google Photos, et les
-   trames CAN brutes (plus de 100 Mo par heure de route) dans Google Drive
-   (15 Go gratuits), avec le même compte Google que les photos.
+   Choix de Meudo (10/11/2026) : tout chez Google, gratuit (15 Go du compte).
+   Classeurs et trames CAN sont rangés dans le dossier « Moto ESP32 » du Drive.
 
-   La base de données est un PostgreSQL vu à travers PostgREST : c'est exactement
-   ce que proposent Supabase (dans le cloud) et le petit serveur maison fourni dans
-   le dossier serveur/ (Docker). Le module envoie des requêtes
+   Facultatif : une base PostgreSQL vue à travers PostgREST (Supabase, ou le petit
+   serveur maison du dossier serveur/, Docker) peut recevoir les mêmes données. Le module envoie des requêtes
        POST <adresse de l'API>/<table>
    avec la clé dans les en-têtes « apikey » et « Authorization: Bearer ».
    Chaque ligne a une clé unique : renvoyer deux fois la même ligne ne crée pas
@@ -58,6 +53,11 @@ void activerLaSynchronisation(bool active);
 // Trames CAN brutes : 0 = gardées sur la carte SD, 1 = fichiers CSV dans Google Drive (par défaut),
 // 2 = table trames_can de la base (seulement pour un serveur maison : trop volumineux pour un cloud gratuit).
 void choisirLEnvoiDesTramesCAN(int mode);
+
+// Teste la connexion : réseau capté ? mot de passe accepté ? Internet ? compte Google ?
+// Le résultat (et la raison d'un échec) part vers l'appli dans le message {"t":"wifi_test","etat":0|1|2,"msg":"..."}.
+void testerLeWifiDeLaMaison();
+void decrireLeTestDuWifi(JsonDocument& document);
 
 // Lance une synchronisation tout de suite (si le Wi-Fi de la maison est à portée).
 void synchroniserMaintenant();
