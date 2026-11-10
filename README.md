@@ -19,7 +19,8 @@ Boîtier connecté pour moto, basé sur la carte **Waveshare ESP32-S3 A7670E 4G*
 - **Batterie** : charge, tension, en charge ou non, source d'alimentation, autonomie (jauge MAX17048)
 - **Journal** du module : un fichier par jour sur la carte SD (`/journaux/jj-mm-aaaa.log`), aussi visible en direct dans l'application
 - **Explorateur de la carte SD** dans l'application : parcourir, renommer, déplacer, supprimer, créer des dossiers, télécharger
-- **Mise à jour du firmware** par Bluetooth depuis l'application
+- **Mise à jour du firmware** depuis l'application, par Wi-Fi (le module ouvre son Wi-Fi le temps du transfert) ou par Bluetooth
+- **Wi-Fi à la demande** pour les gros fichiers : environ 50 fois plus rapide que le Bluetooth, éteint le reste du temps
 - **État du module** : processeur, mémoires, tâches FreeRTOS, version de la carte (V1 ou V2, détectée au démarrage)
 
 L'application Android est dans [`android/`](android/README.md), le protocole Bluetooth dans [`docs/protocole_ble.md`](docs/protocole_ble.md).
@@ -105,6 +106,7 @@ src/
 ├── module_explorateur_fichiers.cpp  Fichiers de la carte SD pour l'application
 ├── module_mise_a_jour.cpp           Mise à jour du firmware par Bluetooth
 ├── module_appli.cpp                 Bluetooth : données, commandes, journal vers l'application
+├── module_wifi.cpp                  Wi-Fi à la demande : gros transferts de fichiers et mise à jour
 └── outils_texte.cpp                 Conversions de texte (UCS2 du modem, découpage des champs)
 ```
 

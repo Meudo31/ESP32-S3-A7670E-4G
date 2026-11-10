@@ -41,6 +41,7 @@
 #include "module_explorateur_fichiers.h"
 #include "module_gps.h"
 #include "module_haut_parleur.h"
+#include "module_wifi.h"
 #include "module_alertes_sms.h"
 #include "module_horloge.h"
 #include "module_journal.h"
@@ -106,6 +107,7 @@ void setup() {
     // 5. La liaison avec l'application Android.
     demarrer("Explorateur de fichiers", demarrerModuleExplorateurFichiers);
     demarrer("Mise à jour",             demarrerModuleMiseAJour);
+    demarrer("Wi-Fi",                   demarrerModuleWifi);
     demarrer("Appli Bluetooth",         demarrerModuleAppli);
 
     ecrireDansLeJournal("[DEMARRAGE] Terminé : %d tâche(s) lancée(s), %d module(s) en échec.",
