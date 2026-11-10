@@ -187,6 +187,13 @@ object Protocole {
                 allumee = j.optInt("allumee") == 1,
                 noms = j.optJSONArray("noms")?.let { tableau -> List(tableau.length()) { tableau.optString(it) } } ?: emptyList(),
             ))
+            "camera" -> etat.copy(camera = EtatCamera(
+                prete = j.optInt("pret") == 1,
+                capteur = j.optString("capteur"),
+                tailleMaximum = j.optInt("tmax", 13),
+                valeurs = j.optJSONObject("r")?.let { r -> r.keys().asSequence().associateWith { r.optInt(it) } } ?: emptyMap(),
+                nonPrisEnCharge = j.optJSONArray("ns")?.let { tableau -> List(tableau.length()) { tableau.optString(it) }.toSet() } ?: emptySet(),
+            ))
             "appel" -> etat.copy(appel = EtatAppel(
                 etat = EtatAppel.Etat.entries.getOrElse(j.optInt("etat")) { EtatAppel.Etat.AUCUN },
                 numero = j.optString("num"),
@@ -342,6 +349,12 @@ data class EtatCarte(
 
 data class EtatNeopixels(val numero: Int, val nom: String, val luminosite: Int, val allumee: Boolean, val noms: List<String>)
 
+/** Réglages de la caméra du module (message « camera », voir module_camera.cpp). */
+data class EtatCamera(
+    val prete: Boolean, val capteur: String, val tailleMaximum: Int,
+    val valeurs: Map<String, Int>, val nonPrisEnCharge: Set<String>,
+)
+
 data class EtatAppel(val etat: Etat, val numero: String, val dureeSecondes: Long) {
     enum class Etat { AUCUN, SONNERIE, NUMEROTATION, EN_COMMUNICATION }
 }
@@ -358,6 +371,7 @@ data class EtatDuModule(
     val carte: EtatCarte? = null,
     val neopixels: EtatNeopixels? = null,
     val appel: EtatAppel? = null,
+    val camera: EtatCamera? = null,
     val historiqueGps: List<PointGps> = emptyList(),
     val historiqueBatterie: List<PointBatterie> = emptyList(),
     val historiqueSignal: List<PointSignal> = emptyList(),
