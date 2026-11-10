@@ -45,7 +45,7 @@ void commencer(const char* arguments) {
         repondre("ERR fichier trop gros pour la partition de mise à jour");
         return;
     }
-    if (enCours) Update.abort();
+    if (enCours || Update.isRunning()) Update.abort();   // y compris un envoi Wi-Fi coupé net
     if (!Update.begin(taille, U_FLASH)) { echouer("début"); return; }
     if (nombreDeValeurs == 2 && strlen(empreinteMD5) == 32 && !Update.setMD5(empreinteMD5)) { echouer("md5"); return; }
     enCours        = true;
