@@ -172,6 +172,7 @@ void envoyerLesTramesCAN() {
         vTaskDelay(pdMS_TO_TICKS(30));   // laisse partir la notification
     }
 }
+void envoyerLesReglagesDeLaCamera() { JsonDocument d; decrireLesReglagesDeLaCamera(d); envoyerUnDocument(d); }
 
 void envoyerLaCarteEtLaCarteSD() {
     const InformationsCarteSD sd = informationsDeLaCarteSD();
@@ -222,6 +223,7 @@ void envoyerToutLEtat() {
     envoyerLesNeopixels();
     envoyerLAppelEnCours();
     envoyerLeBusCAN();
+    envoyerLesReglagesDeLaCamera();
 }
 
 // ─────────────────────────────── Commandes ───────────────────────────────
@@ -273,6 +275,29 @@ void commandeHeure(const char* nom, const ArgumentsDeCommande& arguments) {
 void commandePhoto(const char* nom, const ArgumentsDeCommande&) {
     const bool demandee = demanderUnePhoto();
     repondreALAppli(nom, demandee, demandee ? "Photo demandée" : "Caméra non démarrée");
+}
+
+void commandeReglagesDeLaCamera(const char* nom, const ArgumentsDeCommande&) {
+    envoyerLesReglagesDeLaCamera();
+    repondreALAppli(nom, true, "Réglages envoyés");
+}
+
+// CAMERA_REGLER nom|valeur, ex. « CAMERA_REGLER lum|1 ». Le réglage est gardé dans la mémoire permanente.
+void commandeReglerLaCamera(const char* nom, const ArgumentsDeCommande& arguments) {
+    String explication;
+    String valeur = arguments.second;
+    valeur.trim();
+    if (arguments.premier.length() == 0 || valeur.length() == 0) {
+        repondreALAppli(nom, false, "Usage : CAMERA_REGLER nom|valeur");
+        return;
+    }
+    const bool reussi = reglerLaCamera(arguments.premier.c_str(), valeur.toInt(), explication);
+    repondreALAppli(nom, reussi, explication.c_str());
+}
+
+void commandeReglagesParDefautDeLaCamera(const char* nom, const ArgumentsDeCommande&) {
+    remettreLesReglagesDeLaCameraParDefaut();
+    repondreALAppli(nom, true, "Réglages de la caméra remis par défaut");
 }
 
 void commandeGPS(const char* nom, const ArgumentsDeCommande&) {
@@ -527,6 +552,9 @@ const CommandeConnue COMMANDES[] = {
     { "FICHIER_ENVOYER",     commandeRecevoirUnFichier },
     { "FICHIER_ENVOYER_FIN", commandeTerminerLaReception },
     { "FICHIER_ENVOYER_ANNULER", commandeAnnulerLaReception },
+    { "CAMERA_REGLAGES",     commandeReglagesDeLaCamera },
+    { "CAMERA_REGLER",       commandeReglerLaCamera },
+    { "CAMERA_DEFAUT",       commandeReglagesParDefautDeLaCamera },
 };
 
 void executerUneCommande(const char* texte) {

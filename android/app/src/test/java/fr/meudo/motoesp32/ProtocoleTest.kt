@@ -98,4 +98,18 @@ class ProtocoleTest {
         assertEquals("2 min 05 s", Protocole.duree(125))
         assertEquals("1 j 01 h 00 min", Protocole.duree(90000))
     }
+
+    @Test
+    fun lit_les_reglages_de_la_camera() {
+        val etat = Protocole.appliquer(EtatDuModule(),
+            lire("""{"t":"camera","pret":1,"capteur":"OV2640","tmax":13,"r":{"taille":9,"qualite":12,"lum":-1,"miroir":1},"ns":["nettete","debruit"]}"""))
+        val camera = etat.camera!!
+        assertTrue(camera.prete)
+        assertEquals("OV2640", camera.capteur)
+        assertEquals(13, camera.tailleMaximum)
+        assertEquals(9, camera.valeurs["taille"])
+        assertEquals(-1, camera.valeurs["lum"])
+        assertTrue("nettete" in camera.nonPrisEnCharge)
+        assertFalse("lum" in camera.nonPrisEnCharge)
+    }
 }
