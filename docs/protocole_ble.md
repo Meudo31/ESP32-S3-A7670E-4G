@@ -46,6 +46,8 @@ Chaque notification contient un objet JSON dont le champ `t` donne le type.
 | `carte` | 15 s | `version` (V1/V2), `methode` (comment elle a été détectée), `camera`, `sd`, `sd_type`, `sd_total`, `sd_util`, `heure` (source de l'heure), `vol` |
 | `neo` | 15 s et à chaque changement | `num`, `nom`, `lum` 0-255, `allumee`, `noms` (les 13 animations) |
 | `appel` | 15 s et à chaque changement | `etat` (0 aucun, 1 sonnerie, 2 numérotation, 3 en communication), `num`, `duree` s |
+| `can` | 1 s | Bus CAN de la moto : `etat` (`actif`, `silence`, `recherche`, `absent`), `kbps` (vitesse trouvée), `reglage` (0 = auto), `tps` trames/s, `total`, `err` (erreurs du bus), `enr` (enregistrement SD 0/1), `perdues`, `fichier`, `ids` (identifiants différents vus), `age` s depuis la dernière trame, `pb` (dernier problème), `tx` `rx` (broches), `dtc` : `[SPN, FMI, occurrences, source]`, et `v` : valeurs décodées présentes seulement si vues — `rpm`, `vit` km/h, `vav` roue avant, `pat` patinage, `rap` rapport, `pap` gaz %, `cpl` couple %, `tmot` °C, `carb` %, `auto` km, `debit` L/h, `conso` `cmoy` L/100 km, `bat` V, `text` °C, `odo` `trip` km, `pav` `par` bar, `tpav` `tpar` °C, `frein` `embr` `regul` `coupe` `beq` `clig` `clid` `warn` `croi` `route` (0/1), `chute` (capteur de chute brut), `lamp` (MIL 1, stop 2, alerte 4, protection 8), `obd` |
+| `can_ids` | sur `CAN_TRAMES` | `debut`, `fin`, `l` : `[identifiant hexa, 29 bits 0/1, longueur, compteur, données hexa, âge s]` ; plusieurs messages |
 | `taches` | sur `SYSTEME` | `debut` (1 = nouvelle liste), `l` : `[nom, pile, pile restante, priorité, cœur]` ; la liste arrive en plusieurs messages |
 
 Pour ajouter une donnée : l'ajouter dans la fonction `decrire...()` du module concerné, puis dans `Protocole.appliquer()` côté Android.
@@ -90,6 +92,10 @@ Les arguments sont séparés du nom par un espace, et entre eux par `|`. Les nom
 | `SORTIE_AUDIO 1\|3` | Sortie audio du modem (`AT+CSDVC`) : 3 = haut-parleur (par défaut), 1 = combiné ; mémorisée, puis test |
 | `SONS_INSTALLER` | Copie `/sons/sms.wav` et `/sons/sonnerie.wav` de la carte SD dans le modem |
 | `NEO n`, `NEO_SUIVANTE`, `NEO_ONOFF`, `NEO_LUMINOSITE 0-255` | Bande NeoPixel |
+| `CAN_VITESSE 0\|125\|250\|500\|1000` | Vitesse du bus CAN en kbit/s (0 = recherche automatique) ; mémorisée |
+| `CAN_ENREGISTRER 0\|1` | Coupe ou active l'enregistrement des trames brutes dans `/can` de la carte SD ; mémorisé |
+| `CAN_TRAMES` | Envoie la liste des trames vues (`can_ids`) |
+| `CAN_EFFACER` | Oublie la liste des trames vues et les codes défaut |
 | `FICHIERS chemin` | Liste un dossier de la carte SD |
 | `FICHIER_RENOMMER ancien\|nouveau`, `FICHIER_DEPLACER source\|destination` | Renomme ou déplace un fichier ou un dossier |
 | `FICHIER_SUPPRIMER chemin` | Supprime un fichier ou un dossier (avec son contenu) |

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -52,6 +53,25 @@ fun EcranTableauDeBord(modifier: Modifier, client: MotoBleClient, ouvrir: (Ecran
                 },
             )
             TextButton(onClick = { ouvrir(Ecran.GPS) }) { Text("Carte et détails") }
+        }
+
+        Carte("Moto (bus CAN)") {
+            val c = etat.canBus
+            val v = c?.valeurs
+            Text(
+                when {
+                    c == null -> "En attente…"
+                    c.etat != "actif" -> "Pas de trames (moto coupée ou non branchée)"
+                    else -> listOfNotNull(
+                        v?.regime?.let { "%.0f tr/min".format(it) },
+                        v?.vitesse?.let { "%.0f km/h".format(it) },
+                        v?.rapport?.let { "rapport $it" },
+                        v?.carburant?.let { "essence %.0f %%".format(it) },
+                    ).ifEmpty { listOf("${c.tramesParSeconde} trames/s, rien de décodé") }.joinToString(" · ")
+                },
+            )
+            if (c != null && c.codesDefaut.isNotEmpty()) Text("⚠️ ${c.codesDefaut.size} code(s) défaut", color = MaterialTheme.colorScheme.error)
+            TextButton(onClick = { ouvrir(Ecran.CAN) }) { Text("Détails du bus CAN") }
         }
 
         Carte("Réseau 4G") {

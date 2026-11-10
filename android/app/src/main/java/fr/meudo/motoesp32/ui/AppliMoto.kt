@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.BluetoothSearching
 import androidx.compose.material.icons.filled.BatteryChargingFull
+import androidx.compose.material.icons.filled.Cable
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Folder
@@ -69,6 +70,7 @@ import fr.meudo.motoesp32.ble.EtatOta
 enum class Ecran(val titre: String, val icone: ImageVector) {
     TABLEAU("Tableau de bord", Icons.Filled.Dashboard),
     GPS("GPS et carte", Icons.Filled.Map),
+    CAN("Bus CAN de la moto", Icons.Filled.Cable),
     TELEPHONE("SMS, appels, 4G", Icons.Filled.Phone),
     PHOTO("Photo", Icons.Filled.CameraAlt),
     FICHIERS("Fichiers de la carte SD", Icons.Filled.Folder),
@@ -188,6 +190,7 @@ fun AppliMoto(
                 else -> when (ecran) {
                     Ecran.TABLEAU -> EcranTableauDeBord(modifier, client) { ecran = it }
                     Ecran.GPS -> EcranGps(modifier, client)
+                    Ecran.CAN -> EcranCanBus(modifier, client)
                     Ecran.TELEPHONE -> EcranTelephone(modifier, client)
                     Ecran.PHOTO -> EcranCamera(modifier, client)
                     Ecran.FICHIERS -> EcranFichiers(modifier, client)
@@ -217,6 +220,7 @@ fun AppliMoto(
 private val COMMANDES_A_CONFIRMER = setOf(
     "FICHIER_RENOMMER", "FICHIER_DEPLACER", "FICHIER_SUPPRIMER", "DOSSIER_CREER", "SMS_SUPPRIMER",
     "SONS_INSTALLER", "REBOOT", "PING", "APPELER", "SON_TEST", "SON_JOUER", "ALERTES_NUMERO", "ALERTES", "ALERTES_TEST",
+    "CAN_VITESSE", "CAN_ENREGISTRER", "CAN_EFFACER",
 )
 
 private fun texteEtat(etat: EtatConnexion): String = when (etat) {
