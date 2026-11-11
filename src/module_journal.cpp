@@ -55,7 +55,7 @@ void tacheJournal(void*) {
 } // namespace
 
 void preparerLeJournal() {
-    if (fileDesLignes == nullptr) fileDesLignes = xQueueCreate(CAPACITE_DE_LA_FILE, sizeof(LigneDuJournal));
+    if (fileDesLignes == nullptr) fileDesLignes = creerUneFileEnPSRAM(CAPACITE_DE_LA_FILE, sizeof(LigneDuJournal));
 }
 
 void ecrireDansLeJournal(const char* format, ...) {

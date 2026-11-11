@@ -974,8 +974,8 @@ size_t tailleMaximumDUneNotification() {
 
 bool demarrerModuleAppli() {
     verrouDesNotifications = xSemaphoreCreateMutex();
-    fileDesCommandes       = xQueueCreate(8, sizeof(CommandeRecue));
-    fileDuJournal          = xQueueCreate(20, sizeof(LigneDuJournalPourLAppli));
+    fileDesCommandes       = creerUneFileEnPSRAM(8, sizeof(CommandeRecue));
+    fileDuJournal          = creerUneFileEnPSRAM(20, sizeof(LigneDuJournalPourLAppli));
     if (verrouDesNotifications == nullptr || fileDesCommandes == nullptr || fileDuJournal == nullptr) return false;
     preparerLeBluetooth();
     ecrireDansLeJournal("[APPLI] Bluetooth actif : « %s ».", NOM_BLUETOOTH_DU_MODULE);

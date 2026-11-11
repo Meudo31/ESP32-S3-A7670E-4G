@@ -168,7 +168,7 @@ void redemarrerDansQuelquesInstants(uint32_t delaiMs) {
 }
 
 bool demarrerModuleMiseAJour() {
-    fileDeLaMiseAJour = xQueueCreate(8, sizeof(MessageDeMiseAJour));
+    fileDeLaMiseAJour = creerUneFileEnPSRAM(8, sizeof(MessageDeMiseAJour));
     if (fileDeLaMiseAJour == nullptr) return false;
     return creerTacheSurveillee(tacheMiseAJour, "Mise a jour", 4096, PRIORITE_HAUTE, COEUR_COMMUNICATIONS);
 }

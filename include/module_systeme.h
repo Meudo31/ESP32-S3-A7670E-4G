@@ -44,6 +44,14 @@ void decrireLeProcesseur(JsonDocument& document);
 void decrireLesMemoires(JsonDocument& document);
 
 // Lance la tâche de surveillance de la mémoire et des piles.
+// File d'attente FreeRTOS dont le contenu est rangé dans la PSRAM (8 Mo) plutôt que dans la RAM
+// interne (≈ 300 Ko, partagée par le Bluetooth et le Wi-Fi). Repli en RAM interne si la PSRAM manque.
+QueueHandle_t creerUneFileEnPSRAM(UBaseType_t nombreDElements, UBaseType_t tailleDUnElement);
+
+// RAM interne libre et plus grand bloc libre, en octets.
+size_t memoireInterneLibre();
+size_t plusGrandBlocInterne();
+
 bool demarrerModuleSysteme();
 
 #endif // MODULE_SYSTEME_H

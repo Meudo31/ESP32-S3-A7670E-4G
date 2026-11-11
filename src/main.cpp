@@ -30,6 +30,7 @@
    ══════════════════════════════════════════════════════════════════════════════ */
 
 #include <Arduino.h>
+#include <esp_heap_caps.h>
 
 #include "configuration.h"
 #include "module_appels.h"
@@ -75,6 +76,10 @@ void afficherLEnTete() {
 } // namespace
 
 void setup() {
+    // Tout bloc de plus de 512 octets demandé par malloc (textes, JSON, Bluetooth...) va dans la PSRAM
+    // (8 Mo) au lieu de la RAM interne (≈ 300 Ko), qu'on garde pour le Wi-Fi et le Bluetooth.
+    // Par défaut, seuls les blocs de plus de 4 Ko allaient dans la PSRAM.
+    heap_caps_malloc_extmem_enable(512);
     Serial.begin(115200);
     preparerLeJournal();
     preparerLHorloge();
@@ -115,6 +120,8 @@ void setup() {
     demarrer("Wi-Fi",                   demarrerModuleWifi);
     demarrer("Synchro maison",          demarrerModuleSynchro);
 
+    ecrireDansLeJournal("[DEMARRAGE] RAM interne libre : %u Ko (plus grand bloc %u Ko).",
+                        (unsigned)(memoireInterneLibre() / 1024), (unsigned)(plusGrandBlocInterne() / 1024));
     ecrireDansLeJournal("[DEMARRAGE] Terminé : %d tâche(s) lancée(s), %d module(s) en échec.",
                         nombreDeTachesSurveillees(), nombreDeModulesEnEchec);
 }

@@ -10,6 +10,7 @@
 #include <time.h>
 #include <esp_heap_caps.h>
 #include <esp_system.h>
+#include <mbedtls/platform.h>
 
 #include "certificats_racines.h"
 #include "configuration.h"
@@ -93,7 +94,7 @@ volatile bool     demandeManuelle = false;
 volatile bool     interruption = false;
 volatile bool     testDemande = false;
 bool              suspendue = false;           // le module a planté pendant la dernière synchro : plus d'automatique
-const size_t      MEMOIRE_INTERNE_MINIMUM = 60 * 1024;   // en dessous, le Wi-Fi risquerait d'étouffer le Bluetooth
+const size_t      MEMOIRE_INTERNE_MINIMUM = 40 * 1024;   // le Wi-Fi en prend ≈ 35 Ko ; en dessous, il étoufferait le Bluetooth
 volatile uint8_t  raisonDeDeconnexion = 0;     // dernier code de l'ESP32 quand la box refuse la connexion
 int               etatDuDernierTest = -1;      // -1 aucun, 0 échec, 1 réussi, 2 en cours (protégé par le verrou)
 String            messageDuDernierTest;        // protégé par le verrou
@@ -1254,6 +1255,7 @@ void testerLaConnexion(const Reglages& r) {
     } else {
         message += "Compte Google pas encore réglé.";
     }
+    message += " (RAM interne libre : " + String(memoireInterneLibre() / 1024) + " Ko)";
     eteindreLeWifiDeLaMaison();
     publierLeTest(reussi ? 1 : 0, message);
 }
@@ -1293,9 +1295,10 @@ void tacheDeSynchronisation(void*) {
         if (testDemande || manuelle) {
             suspendue = false;   // l'utilisateur redemande : on retente
         }
-        const size_t memoireInterne = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+        const size_t memoireInterne = memoireInterneLibre();
         if ((testDemande || manuelle) && memoireInterne < MEMOIRE_INTERNE_MINIMUM) {
-            const String m = "Mémoire interne insuffisante (" + String(memoireInterne / 1024) + " Ko libres) : Wi-Fi non lancé pour protéger le Bluetooth.";
+            const String m = "Mémoire interne insuffisante (" + String(memoireInterne / 1024) + " Ko libres, il en faut "
+                           + String(MEMOIRE_INTERNE_MINIMUM / 1024) + ") : Wi-Fi non lancé pour protéger le Bluetooth.";
             if (testDemande) publierLeTest(0, m); else noterLEtat(m);
             testDemande = false;
             continue;
@@ -1485,9 +1488,17 @@ bool demarrerModuleSynchro() {
     if (verrou == nullptr) return false;
     lireLesReglages();
     verifierLaGarde();
+    // Les échanges chiffrés (TLS) demandent ≈ 40 Ko par connexion : dans la PSRAM plutôt que dans la
+    // RAM interne (le firmware Arduino les met d'office en RAM interne, qui manque avec le Bluetooth).
+    mbedtls_platform_set_calloc_free(
+        [](size_t nombre, size_t taille) -> void* {
+            void* bloc = heap_caps_calloc(nombre, taille, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+            return bloc != nullptr ? bloc : heap_caps_calloc(nombre, taille, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        },
+        [](void* bloc) { heap_caps_free(bloc); });
     WiFi.onEvent([](arduino_event_id_t, arduino_event_info_t info) {
         if (info.wifi_sta_disconnected.reason != 0) raisonDeDeconnexion = info.wifi_sta_disconnected.reason;
     }, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
     // Les échanges TLS demandent une grosse pile.
-    return creerTacheSurveillee(tacheDeSynchronisation, "Synchro", 16384, PRIORITE_BASSE, COEUR_TRAITEMENTS, &tacheSynchro);
+    return creerTacheSurveillee(tacheDeSynchronisation, "Synchro", 12288, PRIORITE_BASSE, COEUR_TRAITEMENTS, &tacheSynchro);
 }
