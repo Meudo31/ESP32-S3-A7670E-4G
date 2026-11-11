@@ -562,6 +562,7 @@ void ajouterSiConnu(JsonObject objet, const char* cle, int valeur) {
 bool busCANActif() { return derniereTrameMs != 0 && millis() - derniereTrameMs < SILENCE_AVANT_MOTO_COUPEE_MS; }
 
 int nombreDeTramesCANVues() {
+    if (verrou == nullptr) return 0;
     xSemaphoreTake(verrou, portMAX_DELAY);
     const int n = nombreDeTramesVues;
     xSemaphoreGive(verrou);
@@ -569,6 +570,7 @@ int nombreDeTramesCANVues() {
 }
 
 bool trameCANVue(int numero, TrameCANVue& trame) {
+    if (verrou == nullptr) return false;
     xSemaphoreTake(verrou, portMAX_DELAY);
     const bool existe = numero >= 0 && numero < nombreDeTramesVues;
     if (existe) trame = tramesVues[numero];
@@ -597,6 +599,7 @@ void effacerLesTramesCANVues() { effacementDemande = true; }
 
 void decrireLeBusCAN(JsonDocument& document) {
     document["t"]      = "can";
+    if (verrou == nullptr) { document["etat"] = "absent"; return; }
     document["etat"]   = recherche ? "recherche" : (busCANActif() ? "actif" : (vitesseActuelle ? "silence" : "absent"));
     document["kbps"]   = (int)vitesseActuelle;
     document["reglage"] = (int)vitesseReglee;
@@ -662,7 +665,7 @@ void decrireLeBusCAN(JsonDocument& document) {
 }
 
 String resumeDuBusCAN() {
-    if (!busCANActif()) return "";
+    if (!busCANActif() || verrou == nullptr) return "";
     xSemaphoreTake(verrou, portMAX_DELAY);
     const ValeursDecodees v = valeurs;
     const int codes = nombreDeCodesDefaut;

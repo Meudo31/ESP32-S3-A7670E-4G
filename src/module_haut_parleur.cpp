@@ -34,7 +34,7 @@ void envoyerLaDemande(SonDemande son, const String& texte = "", int valeur = 0) 
     demande.son    = son;
     demande.valeur = valeur;
     strlcpy(demande.texte, texte.c_str(), sizeof(demande.texte));
-    xQueueSend(fileDesSons, &demande, 0);
+    if (fileDesSons != nullptr) xQueueSend(fileDesSons, &demande, 0);
 }
 
 bool prononcer(const char* texte) {

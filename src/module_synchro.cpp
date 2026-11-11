@@ -1369,6 +1369,7 @@ void tacheDeSynchronisation(void*) {
 // ─────────────────────────────── Réglages depuis l'appli ───────────────────────────────
 
 void choisirLeWifiDeLaMaison(const String& nom, const String& motDePasse) {
+    if (verrou == nullptr) return;   // module pas encore démarré
     xSemaphoreTake(verrou, portMAX_DELAY);
     reglages.wifiNom = nom;
     if (motDePasse.length() > 0 || nom.length() == 0) reglages.wifiMotDePasse = motDePasse;   // vide = on garde l'ancien
@@ -1382,6 +1383,7 @@ void choisirLeServeurDeDonnees(const String& adresse, const String& cle) {
     String propre = adresse;
     propre.trim();
     while (propre.endsWith("/")) propre.remove(propre.length() - 1);
+    if (verrou == nullptr) return;
     xSemaphoreTake(verrou, portMAX_DELAY);
     reglages.api = propre;
     if (cle.length() > 0 || propre.length() == 0) reglages.cle = cle;   // vide = on garde l'ancienne
@@ -1392,6 +1394,7 @@ void choisirLeServeurDeDonnees(const String& adresse, const String& cle) {
 }
 
 void choisirLeClientGoogle(const String& identifiant, const String& secret) {
+    if (verrou == nullptr) return;   // module pas encore démarré
     xSemaphoreTake(verrou, portMAX_DELAY);
     reglages.googleId = identifiant;
     if (secret.length() > 0 || identifiant.length() == 0) reglages.googleSecret = secret;
@@ -1403,6 +1406,7 @@ void choisirLeClientGoogle(const String& identifiant, const String& secret) {
 }
 
 void choisirLeJetonGoogle(const String& jetonDeRafraichissement) {
+    if (verrou == nullptr) return;   // module pas encore démarré
     xSemaphoreTake(verrou, portMAX_DELAY);
     reglages.googleJeton = jetonDeRafraichissement;
     reglages.album = "";   // nouveau compte peut-être : l'album sera recréé si besoin
@@ -1413,6 +1417,7 @@ void choisirLeJetonGoogle(const String& jetonDeRafraichissement) {
 }
 
 void activerLaSynchronisation(bool active) {
+    if (verrou == nullptr) return;   // module pas encore démarré
     xSemaphoreTake(verrou, portMAX_DELAY);
     reglages.active = active;
     xSemaphoreGive(verrou);
@@ -1421,6 +1426,7 @@ void activerLaSynchronisation(bool active) {
 
 void choisirLEnvoiDesTramesCAN(int mode) {
     if (mode < 0 || mode > 2) mode = 1;
+    if (verrou == nullptr) return;
     xSemaphoreTake(verrou, portMAX_DELAY);
     reglages.modeCAN = mode;
     xSemaphoreGive(verrou);

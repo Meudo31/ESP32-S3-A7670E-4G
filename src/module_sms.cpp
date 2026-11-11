@@ -163,7 +163,7 @@ void quandUnSMSArrive(const String& ligne) {
     DemandeSMS demande = {};
     demande.travail         = TravailSMS::LIRE_UN_NOUVEAU_SMS;
     demande.numeroDansLaSim = ligne.substring(ligne.lastIndexOf(',') + 1).toInt();
-    xQueueSend(fileDuModuleSMS, &demande, 0);
+    if (fileDuModuleSMS != nullptr) xQueueSend(fileDuModuleSMS, &demande, 0);
 }
 
 void tacheSMS(void*) {

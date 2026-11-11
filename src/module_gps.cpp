@@ -174,6 +174,7 @@ void tacheGPS(void*) {
 } // namespace
 
 PositionGPS positionGPS() {
+    if (verrouDeLaPosition == nullptr) return positionActuelle;   // module pas encore démarré
     xSemaphoreTake(verrouDeLaPosition, portMAX_DELAY);
     PositionGPS copie = positionActuelle;
     xSemaphoreGive(verrouDeLaPosition);
