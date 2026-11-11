@@ -10,6 +10,7 @@
 #include "module_journal.h"
 #include "module_mise_a_jour.h"
 #include "module_systeme.h"
+#include "module_synchro.h"
 
 namespace {
 
@@ -174,6 +175,9 @@ void recevoirUnMorceauDeFirmware() {
             erreurDeMiseAJour = false;
             messageDeMiseAJour = "";
             annulerLaMiseAJourEnCours();   // au cas où une mise à jour par Bluetooth serait en cours
+            // Un envoi précédent coupé net (téléphone parti) laisse Update « en cours » : sans ça,
+            // toutes les mises à jour suivantes seraient refusées jusqu'au redémarrage du module.
+            if (Update.isRunning()) Update.abort();
             ecrireDansLeJournal("[WIFI] Mise à jour du firmware reçue par Wi-Fi...");
             if (!Update.begin(UPDATE_SIZE_UNKNOWN)) { erreurDeMiseAJour = true; messageDeMiseAJour = Update.errorString(); }
             break;
@@ -214,6 +218,7 @@ void preparerLeServeur() {
 }
 
 void allumer() {
+    interrompreLaSynchronisation();   // le Wi-Fi de la maison et le point d'accès ne vont pas ensemble
     WiFi.mode(WIFI_AP);
     WiFi.softAP(NOM_DU_WIFI, motDePasseDuWifi.c_str(), 6, 0, 1);   // canal 6, visible, un seul téléphone
     serveur.begin();
@@ -265,7 +270,7 @@ bool ouvrirLeWifi(String& nom, String& motDePasse, String& adresse) {
     ouvertureDemandee = true;
     derniereActivite = millis();
     xTaskNotifyGive(tacheWifi);
-    for (int attente = 0; attente < 100 && !ouvert; attente++) vTaskDelay(pdMS_TO_TICKS(50));
+    for (int attente = 0; attente < 240 && !ouvert; attente++) vTaskDelay(pdMS_TO_TICKS(50));   // 12 s : le temps d'arrêter une synchro en cours
     nom = NOM_DU_WIFI;
     motDePasse = motDePasseDuWifi;
     adresse = "192.168.4.1";

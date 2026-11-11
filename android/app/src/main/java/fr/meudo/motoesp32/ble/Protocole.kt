@@ -116,6 +116,26 @@ object Protocole {
                 } else etat.historiqueSignal
                 etat.copy(reseau = r, historiqueSignal = historique)
             }
+            "wifi_test" -> etat.copy(testWifi = TestWifi(j.optInt("etat", -1), j.optString("msg")))
+            "synchro" -> etat.copy(synchro = EtatSynchro(
+                active = j.optInt("actif", 1) == 1,
+                modeCan = j.optInt("can", 1),
+                wifiNom = j.optString("ssid"),
+                wifiMotDePasseRegle = j.optInt("mdp") == 1,
+                adresseApi = j.optString("api"),
+                cleReglee = j.optInt("cle") == 1,
+                clientGoogleRegle = j.optInt("g_id") == 1,
+                jetonGoogleRegle = j.optInt("g_jeton") == 1,
+                enCours = j.optInt("encours") == 1,
+                etat = j.optString("etat"),
+                derniereErreur = j.optString("err"),
+                derniereSynchroUtc = j.optLong("der"),
+                lignesDeJournal = j.optLong("n_j"),
+                positions = j.optLong("n_g"),
+                fichiersCan = j.optLong("n_c"),
+                tramesCan = j.optLong("n_t"),
+                photos = j.optLong("n_p"),
+            ))
             "sim" -> etat.copy(sim = EtatSim(
                 modele = j.optString("modele"),
                 versionLogiciel = j.optString("logiciel"),
@@ -457,6 +477,22 @@ data class EtatDuModule(
     val canBus: EtatCan? = null,
     val tramesCan: List<TrameCan> = emptyList(),
     val historiqueCan: List<PointCan> = emptyList(),
+    val synchro: EtatSynchro? = null,
+    val testWifi: TestWifi? = null,
+)
+
+/** Résultat du test de connexion au Wi-Fi de la maison : etat -1 aucun, 0 échec, 1 réussi, 2 en cours. */
+data class TestWifi(val etat: Int, val message: String) {
+    val enCours: Boolean get() = etat == 2
+    val reussi: Boolean get() = etat == 1
+}
+
+/** Synchronisation au Wi-Fi de la maison (message « synchro », voir module_synchro.cpp). Les secrets ne sont jamais renvoyés. */
+data class EtatSynchro(
+    val active: Boolean, val modeCan: Int, val wifiNom: String, val wifiMotDePasseRegle: Boolean,
+    val adresseApi: String, val cleReglee: Boolean, val clientGoogleRegle: Boolean, val jetonGoogleRegle: Boolean,
+    val enCours: Boolean, val etat: String, val derniereErreur: String, val derniereSynchroUtc: Long,
+    val lignesDeJournal: Long, val positions: Long, val fichiersCan: Long, val tramesCan: Long, val photos: Long,
 )
 
 // ─────────────────────────────── Bus CAN de la moto ───────────────────────────────

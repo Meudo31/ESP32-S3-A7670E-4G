@@ -25,9 +25,12 @@
      bus CAN              Bus CAN        écoute des trames de la moto (écoute seule)
      mise à jour          Mise a jour    nouveau firmware envoyé par l'appli
      appli                Appli BLE      liaison Bluetooth avec l'application Android
+     synchro              Synchro        au Wi-Fi de la maison : logs, GPS → Supabase,
+                                         photos → Google Photos, trames CAN → Google Drive
    ══════════════════════════════════════════════════════════════════════════════ */
 
 #include <Arduino.h>
+#include <esp_heap_caps.h>
 
 #include "configuration.h"
 #include "module_appels.h"
@@ -51,6 +54,7 @@
 #include "module_reseau_4g.h"
 #include "module_sms.h"
 #include "module_systeme.h"
+#include "module_synchro.h"
 
 namespace {
 
@@ -72,6 +76,10 @@ void afficherLEnTete() {
 } // namespace
 
 void setup() {
+    // Tout bloc de plus de 512 octets demandé par malloc (textes, JSON, Bluetooth...) va dans la PSRAM
+    // (8 Mo) au lieu de la RAM interne (≈ 300 Ko), qu'on garde pour le Wi-Fi et le Bluetooth.
+    // Par défaut, seuls les blocs de plus de 4 Ko allaient dans la PSRAM.
+    heap_caps_malloc_extmem_enable(512);
     Serial.begin(115200);
     preparerLeJournal();
     preparerLHorloge();
@@ -107,9 +115,13 @@ void setup() {
     // 5. La liaison avec l'application Android.
     demarrer("Explorateur de fichiers", demarrerModuleExplorateurFichiers);
     demarrer("Mise à jour",             demarrerModuleMiseAJour);
-    demarrer("Wi-Fi",                   demarrerModuleWifi);
+    // Le Bluetooth d'abord : il a besoin d'un gros bloc de mémoire interne, que le Wi-Fi ne doit pas lui prendre.
     demarrer("Appli Bluetooth",         demarrerModuleAppli);
+    demarrer("Wi-Fi",                   demarrerModuleWifi);
+    demarrer("Synchro maison",          demarrerModuleSynchro);
 
+    ecrireDansLeJournal("[DEMARRAGE] RAM interne libre : %u Ko (plus grand bloc %u Ko).",
+                        (unsigned)(memoireInterneLibre() / 1024), (unsigned)(plusGrandBlocInterne() / 1024));
     ecrireDansLeJournal("[DEMARRAGE] Terminé : %d tâche(s) lancée(s), %d module(s) en échec.",
                         nombreDeTachesSurveillees(), nombreDeModulesEnEchec);
 }

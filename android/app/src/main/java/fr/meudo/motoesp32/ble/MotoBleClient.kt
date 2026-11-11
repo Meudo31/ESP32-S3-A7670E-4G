@@ -103,6 +103,7 @@ sealed interface EtatOta {
 @SuppressLint("MissingPermission")
 /** En dessous de cette taille, le Bluetooth suffit (se connecter au Wi-Fi prend quelques secondes). */
 private const val SEUIL_POUR_LE_WIFI = 100L * 1024
+private const val ESSAIS_DE_MISE_A_JOUR = 3
 
 class MotoBleClient(private val context: Context, private val scope: CoroutineScope) {
 
@@ -457,7 +458,7 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
         if (_etat.value is EtatConnexion.Reconnexion) return
         scope.launch {
             if (!ecrire(Protocole.COMMANDE, commande.toByteArray(Charsets.UTF_8))) {
-                _reponses.tryEmit(ReponseCommande(commande, false, "Envoi impossible"))
+                _reponses.tryEmit(ReponseCommande(commande.substringBefore(" "), false, "Envoi impossible"))
             }
         }
     }
@@ -486,12 +487,54 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
 
     fun reinitialiserOta() { if (_ota.value !is EtatOta.EnCours) _ota.value = EtatOta.Inactif }
 
+    /**
+     * Mise à jour avec reprise automatique : jusqu'à 3 essais. Après un échec, on attend que le module
+     * soit reconnecté ; s'il a redémarré sur un firmware compilé à une autre date, c'est que la mise à jour
+     * a quand même réussi (la réponse s'est perdue pendant son redémarrage) : on ne la renvoie pas.
+     */
     private suspend fun executerMiseAJour(firmware: ByteArray) {
-        fun erreur(message: String) { _ota.value = EtatOta.Erreur(message) }
-
-        if (_etat.value != EtatConnexion.Connecte) return erreur("Module non connecté")
         if (firmware.size < 1024 || firmware[0] != Protocole.OCTET_MAGIQUE_FIRMWARE) {
-            return erreur("Ce fichier n'est pas un firmware ESP32 (prendre firmware.bin dans .pio/build/…)")
+            _ota.value = EtatOta.Erreur("Ce fichier n'est pas un firmware ESP32 (prendre firmware.bin dans .pio/build/…)")
+            return
+        }
+        val compilationAvant = _etatModule.value.systeme?.compilation
+        var probleme: String? = null
+        for (essai in 1..ESSAIS_DE_MISE_A_JOUR) {
+            if (essai > 1) {
+                ajouterAuJournal("Mise à jour : échec ($probleme). Reprise automatique, essai $essai/$ESSAIS_DE_MISE_A_JOUR.")
+                _ota.value = EtatOta.EnCours(0f, "Échec : $probleme\nReprise automatique (essai $essai/$ESSAIS_DE_MISE_A_JOUR)…")
+                if (!attendreLeModule()) { probleme = "module déconnecté"; break }
+                if (firmwareChange(compilationAvant)) { _ota.value = EtatOta.Termine; return }
+            }
+            probleme = unEssaiDeMiseAJour(firmware) ?: run { _ota.value = EtatOta.Termine; return }
+        }
+        if (attendreLeModule() && firmwareChange(compilationAvant)) { _ota.value = EtatOta.Termine; return }
+        _ota.value = EtatOta.Erreur("Échec après $ESSAIS_DE_MISE_A_JOUR essais : $probleme")
+    }
+
+    /** Attend (60 s au plus) que la liaison Bluetooth soit rétablie, puis laisse le module se poser. */
+    private suspend fun attendreLeModule(): Boolean {
+        delay(3_000)
+        val connecte = withTimeoutOrNull(60_000) { _etat.first { it == EtatConnexion.Connecte } } != null
+        if (connecte) delay(2_000)
+        return connecte
+    }
+
+    /** true si le module tourne maintenant sur un autre firmware qu'avant la mise à jour. */
+    private suspend fun firmwareChange(compilationAvant: String?): Boolean {
+        if (compilationAvant.isNullOrEmpty()) return false
+        envoyerCommande("SYSTEME")
+        val apres = withTimeoutOrNull(8_000) {
+            _etatModule.first { val c = it.systeme?.compilation; c != null && c != compilationAvant }
+        }
+        return apres != null
+    }
+
+    /** Un essai complet (Wi-Fi si possible, sinon Bluetooth). Renvoie null si le module a accepté le firmware, sinon la raison. */
+    private suspend fun unEssaiDeMiseAJour(firmware: ByteArray): String? {
+        if (_etat.value != EtatConnexion.Connecte) return ("Module non connecté")
+        if (firmware.size < 1024 || firmware[0] != Protocole.OCTET_MAGIQUE_FIRMWARE) {
+            return ("Ce fichier n'est pas un firmware ESP32 (prendre firmware.bin dans .pio/build/…)")
         }
 
         if (wifiUtilisable(firmware.size.toLong())) {
@@ -507,8 +550,7 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
             }
             if (probleme == null) {
                 libererLeWifi(fermerCoteModule = false)   // le module redémarre sur le nouveau firmware
-                _ota.value = EtatOta.Termine
-                return
+                return null
             }
             libererLeWifi()
             ajouterAuJournal("Wi-Fi : $probleme. Mise à jour par Bluetooth.")
@@ -518,22 +560,22 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
         while (messagesOta.tryReceive().isSuccess) { /* on vide les anciens messages */ }
 
         val md5 = MessageDigest.getInstance("MD5").digest(firmware).joinToString("") { "%02x".format(it) }
-        if (!ecrire(Protocole.OTA_CTRL, "START ${firmware.size} $md5".toByteArray())) return erreur("Envoi impossible")
+        if (!ecrire(Protocole.OTA_CTRL, "START ${firmware.size} $md5".toByteArray())) return ("Envoi impossible")
         val debut = withTimeoutOrNull(15_000) { messagesOta.receive() }
-        if (debut != "OK START") return erreur(debut ?: "Le module ne répond pas")
+        if (debut != "OK START") return (debut ?: "Le module ne répond pas")
 
         gatt?.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
         val tailleBloc = (mtu - 3).coerceIn(20, 509)
         var envoye = 0
         val depart = System.currentTimeMillis()
         while (envoye < firmware.size) {
-            if (_etat.value != EtatConnexion.Connecte) return erreur("Connexion perdue pendant la mise à jour")
+            if (_etat.value != EtatConnexion.Connecte) return ("Connexion perdue pendant la mise à jour")
             val fin = minOf(envoye + tailleBloc, firmware.size)
             if (!ecrire(Protocole.OTA_DATA, firmware.copyOfRange(envoye, fin))) {
                 ecrire(Protocole.OTA_CTRL, "ABORT".toByteArray())
-                return erreur("Échec d'envoi à ${envoye / 1024} Ko")
+                return ("Échec d'envoi à ${envoye / 1024} Ko")
             }
-            messagesOta.tryReceive().getOrNull()?.let { if (it.startsWith("ERR")) return erreur(it) }
+            messagesOta.tryReceive().getOrNull()?.let { if (it.startsWith("ERR")) return (it) }
             envoye = fin
             val secondes = (System.currentTimeMillis() - depart) / 1000.0
             val debit = if (secondes > 0) envoye / 1024.0 / secondes else 0.0
@@ -544,11 +586,11 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
         }
 
         _ota.value = EtatOta.EnCours(1f, "Vérification…")
-        if (!ecrire(Protocole.OTA_CTRL, "END".toByteArray())) return erreur("Envoi impossible")
+        if (!ecrire(Protocole.OTA_CTRL, "END".toByteArray())) return ("Envoi impossible")
         val finOta = withTimeoutOrNull(20_000) { messagesOta.receive() }
-        if (finOta != "OK END") return erreur(finOta ?: "Le module ne répond pas")
+        if (finOta != "OK END") return (finOta ?: "Le module ne répond pas")
         gatt?.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_BALANCED)
-        _ota.value = EtatOta.Termine
+        return null
     }
 
     // ─────────────────────────────── Callbacks Android ───────────────────────────────

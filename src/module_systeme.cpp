@@ -1,3 +1,4 @@
+#include <esp_heap_caps.h>
 #include <Preferences.h>
 #include <esp_ota_ops.h>
 #include <esp_system.h>
@@ -139,6 +140,20 @@ void decrireLesMemoires(JsonDocument& document) {
     document["psram_min"]       = ESP.getMinFreePsram();
     document["psram_bloc"]      = ESP.getMaxAllocPsram();
 }
+
+QueueHandle_t creerUneFileEnPSRAM(UBaseType_t nombreDElements, UBaseType_t tailleDUnElement) {
+    uint8_t* stockage = (uint8_t*)heap_caps_malloc((size_t)nombreDElements * tailleDUnElement, MALLOC_CAP_SPIRAM);
+    StaticQueue_t* structure = (StaticQueue_t*)heap_caps_malloc(sizeof(StaticQueue_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (stockage != nullptr && structure != nullptr) {
+        return xQueueCreateStatic(nombreDElements, tailleDUnElement, stockage, structure);
+    }
+    free(stockage);
+    free(structure);
+    return xQueueCreate(nombreDElements, tailleDUnElement);
+}
+
+size_t memoireInterneLibre()  { return heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT); }
+size_t plusGrandBlocInterne() { return heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT); }
 
 bool demarrerModuleSysteme() {
     compterCeDemarrage();

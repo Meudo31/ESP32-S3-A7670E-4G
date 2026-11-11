@@ -25,7 +25,7 @@ void envoyerLaDemande(ActionDAppel action, const String& numero = "") {
     DemandeDAppel demande = {};
     demande.action = action;
     strlcpy(demande.numero, numero.c_str(), sizeof(demande.numero));
-    xQueueSend(fileDesAppels, &demande, 0);
+    if (fileDesAppels != nullptr) xQueueSend(fileDesAppels, &demande, 0);
 }
 
 void publierLAppelVersLAppli() {
@@ -119,7 +119,7 @@ void executer(const DemandeDAppel& demande) {
 // +CLIP: "0612345678",129,,,,0
 void quandLeNumeroDeLAppelantArrive(const String& ligne) {
     String champs[6];
-    if (decouperLesChamps(ligne.substring(6), champs, 6) >= 1) {
+    if (verrouDeLAppel != nullptr && decouperLesChamps(ligne.substring(6), champs, 6) >= 1) {
         xSemaphoreTake(verrouDeLAppel, portMAX_DELAY);
         numeroDeLAppelant = decoderSiCEstDeLUcs2(champs[0]);
         xSemaphoreGive(verrouDeLAppel);
@@ -146,6 +146,7 @@ void tacheAppels(void*) {
 } // namespace
 
 AppelEnCours appelEnCours() {
+    if (verrouDeLAppel == nullptr) return appelActuel;   // module pas encore démarré
     xSemaphoreTake(verrouDeLAppel, portMAX_DELAY);
     AppelEnCours copie = appelActuel;
     xSemaphoreGive(verrouDeLAppel);

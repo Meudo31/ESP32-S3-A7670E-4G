@@ -25,6 +25,7 @@
 #include "module_sms.h"
 #include "module_systeme.h"
 #include "module_wifi.h"
+#include "module_synchro.h"
 #include "module_alertes_sms.h"
 
 #if __has_include("secrets.h")
@@ -117,6 +118,10 @@ void envoyerLaCarteSIM() {
     d["al_pos"]     = uneAlerteEstActive(TypeDAlerte::POSITION) ? 1 : 0;
     d["al_dep"]     = uneAlerteEstActive(TypeDAlerte::DEPLACEMENT) ? 1 : 0;
     envoyerUnDocument(d);
+}
+void envoyerLaSynchro() {
+    JsonDocument d; decrireLaSynchronisation(d); envoyerUnDocument(d);
+    JsonDocument t; decrireLeTestDuWifi(t);      envoyerUnDocument(t);
 }
 void envoyerLesNeopixels()   { JsonDocument d; decrireLesNeopixels(d);        envoyerUnDocument(d); }
 void envoyerLAppelEnCours()  { JsonDocument d; decrireLAppelEnCours(d);       envoyerUnDocument(d); }
@@ -225,6 +230,7 @@ void envoyerToutLEtat() {
     envoyerLAppelEnCours();
     envoyerLeBusCAN();
     envoyerLesReglagesDeLaCamera();
+    envoyerLaSynchro();
 }
 
 // ─────────────────────────────── Commandes ───────────────────────────────
@@ -435,6 +441,57 @@ void commandeOuvrirLeWifi(const char* nom, const ArgumentsDeCommande&) {
     else                                            repondreALAppli(nom, false, "Wi-Fi impossible à ouvrir");
 }
 
+// ─── Synchronisation au Wi-Fi de la maison (module_synchro) ───
+// Un mot de passe ou une clé vide garde l'ancien (l'appli ne les connaît pas).
+void commandeSynchroWifi(const char* nom, const ArgumentsDeCommande& a) {
+    choisirLeWifiDeLaMaison(a.premier, a.second);
+    repondreALAppli(nom, true, a.premier.length() ? "Wi-Fi de la maison enregistré, test en cours…" : "Wi-Fi de la maison oublié");
+    envoyerLaSynchro();
+    if (a.premier.length()) testerLeWifiDeLaMaison();
+}
+void commandeSynchroServeur(const char* nom, const ArgumentsDeCommande& a) {
+    if (a.premier.length() && !a.premier.startsWith("http://") && !a.premier.startsWith("https://")) {
+        repondreALAppli(nom, false, "L'adresse doit commencer par https:// (ou http:// à la maison)");
+        return;
+    }
+    choisirLeServeurDeDonnees(a.premier, a.second);
+    repondreALAppli(nom, true, a.premier.length() ? "Base de données enregistrée" : "Base de données oubliée");
+    envoyerLaSynchro();
+}
+void commandeSynchroGoogle(const char* nom, const ArgumentsDeCommande& a) {
+    choisirLeClientGoogle(a.premier, a.second);
+    repondreALAppli(nom, true, a.premier.length() ? "Client Google enregistré" : "Client Google oublié");
+    envoyerLaSynchro();
+}
+void commandeSynchroJetonGoogle(const char* nom, const ArgumentsDeCommande& a) {
+    choisirLeJetonGoogle(a.tout);
+    repondreALAppli(nom, true, a.tout.length() ? "Jeton Google enregistré, test en cours…" : "Jeton Google oublié");
+    envoyerLaSynchro();
+    if (a.tout.length()) testerLeWifiDeLaMaison();
+}
+void commandeSynchroActive(const char* nom, const ArgumentsDeCommande& a) {
+    activerLaSynchronisation(a.premier.toInt() != 0);
+    repondreALAppli(nom, true, a.premier.toInt() ? "Synchronisation automatique activée" : "Synchronisation automatique coupée");
+    envoyerLaSynchro();
+}
+void commandeSynchroCAN(const char* nom, const ArgumentsDeCommande& a) {
+    choisirLEnvoiDesTramesCAN(a.premier.toInt());
+    repondreALAppli(nom, true, "Destination des trames CAN enregistrée");
+    envoyerLaSynchro();
+}
+void commandeSynchroMaintenant(const char* nom, const ArgumentsDeCommande&) {
+    synchroniserMaintenant();
+    repondreALAppli(nom, true, "Recherche du Wi-Fi de la maison…");
+}
+void commandeSynchroTester(const char* nom, const ArgumentsDeCommande&) {
+    testerLeWifiDeLaMaison();
+    repondreALAppli(nom, true, "Test de la connexion en cours…");
+}
+void commandeSynchroEtat(const char* nom, const ArgumentsDeCommande&) {
+    envoyerLaSynchro();
+    repondreALAppli(nom, true, "État envoyé");
+}
+
 void commandeFermerLeWifi(const char* nom, const ArgumentsDeCommande&) {
     fermerLeWifi();
     repondreALAppli(nom, true, "Wi-Fi fermé");
@@ -545,6 +602,15 @@ const CommandeConnue COMMANDES[] = {
     { "ALERTES_TYPE",        commandeChoisirUnTypeDAlerte },
     { "ALERTES_TEST",        commandeTesterLesAlertes },
     { "WIFI_OFF",            commandeFermerLeWifi },
+    { "SYNCHRO_WIFI",        commandeSynchroWifi },
+    { "SYNCHRO_SERVEUR",     commandeSynchroServeur },
+    { "SYNCHRO_GOOGLE",      commandeSynchroGoogle },
+    { "SYNCHRO_GOOGLE_JETON", commandeSynchroJetonGoogle },
+    { "SYNCHRO",             commandeSynchroActive },
+    { "SYNCHRO_CAN",         commandeSynchroCAN },
+    { "SYNCHRO_MAINTENANT",  commandeSynchroMaintenant },
+    { "SYNCHRO_ETAT",        commandeSynchroEtat },
+    { "SYNCHRO_TESTER",      commandeSynchroTester },
     { "SON_JOUER",           commandeJouerUnSon },
     { "SORTIE_AUDIO",        commandeSortieAudio },
     { "NEO",                 commandeChoisirLAnimation },
@@ -908,8 +974,8 @@ size_t tailleMaximumDUneNotification() {
 
 bool demarrerModuleAppli() {
     verrouDesNotifications = xSemaphoreCreateMutex();
-    fileDesCommandes       = xQueueCreate(8, sizeof(CommandeRecue));
-    fileDuJournal          = xQueueCreate(20, sizeof(LigneDuJournalPourLAppli));
+    fileDesCommandes       = creerUneFileEnPSRAM(8, sizeof(CommandeRecue));
+    fileDuJournal          = creerUneFileEnPSRAM(20, sizeof(LigneDuJournalPourLAppli));
     if (verrouDesNotifications == nullptr || fileDesCommandes == nullptr || fileDuJournal == nullptr) return false;
     preparerLeBluetooth();
     ecrireDansLeJournal("[APPLI] Bluetooth actif : « %s ».", NOM_BLUETOOTH_DU_MODULE);

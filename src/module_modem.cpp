@@ -210,7 +210,7 @@ void tacheModem(void*) {
 // ─────────────────────────────── API publique ───────────────────────────────
 
 bool prendreLeModem(uint32_t attenteMaximumMs) {
-    return xSemaphoreTakeRecursive(verrouDuModem, pdMS_TO_TICKS(attenteMaximumMs)) == pdTRUE;
+    return verrouDuModem != nullptr && xSemaphoreTakeRecursive(verrouDuModem, pdMS_TO_TICKS(attenteMaximumMs)) == pdTRUE;
 }
 
 void rendreLeModem() { xSemaphoreGiveRecursive(verrouDuModem); }

@@ -1,5 +1,6 @@
 #include "configuration.h"
 #include "module_gps.h"
+#include "module_carte_sd.h"
 #include "module_horloge.h"
 #include "module_journal.h"
 #include "module_modem.h"
@@ -103,6 +104,31 @@ void allumerLeRecepteurGPS() {
     }
 }
 
+// ─── Trace GPS sur la carte SD : /gps/jj-mm-aaaa.csv ───
+// Une ligne « secondesUTC;latitude;longitude;altitude;km/h;cap;satellites;hdop » toutes les 2 s
+// quand la moto roule, toutes les minutes à l'arrêt. Envoyée à la maison par module_synchro.
+void enregistrerLaTrace(const PositionGPS& p) {
+    static uint32_t dernierPointMs = 0;
+    static uint32_t derniereEcritureMs = 0;
+    static String   tampon;
+    if (p.positionValide && p.heureUTC > 1600000000) {
+        const uint32_t periode = p.vitesseKmh > 3.0f ? 2 * UNE_SECONDE_MS : UNE_MINUTE_MS;
+        if (dernierPointMs == 0 || millis() - dernierPointMs >= periode) {
+            dernierPointMs = millis();
+            char ligne[128];
+            snprintf(ligne, sizeof(ligne), "%ld;%.6f;%.6f;%.1f;%.1f;%.0f;%d;%.1f\n", (long)p.heureUTC, p.latitude, p.longitude,
+                     p.altitudeMetres, p.vitesseKmh, p.capDegres, p.satellitesUtilises, p.HDOP);
+            tampon += ligne;
+        }
+    }
+    // Écriture groupée toutes les 30 s pour ménager la carte SD.
+    if (tampon.length() > 0 && (tampon.length() > 2048 || millis() - derniereEcritureMs > 30 * UNE_SECONDE_MS)) {
+        const String chemin = String("/gps/") + (lHeureEstConnue() ? dateDuJourPourNomDeFichier() : String("sans-date")) + ".csv";
+        if (ajouterALaFinDUnFichier(chemin.c_str(), tampon) || tampon.length() > 8192) tampon = "";
+        derniereEcritureMs = millis();
+    }
+}
+
 void tacheGPS(void*) {
     attendreQueLeModemSoitPret(portMAX_DELAY);
     allumerLeRecepteurGPS();
@@ -119,6 +145,7 @@ void tacheGPS(void*) {
             xSemaphoreTake(verrouDeLaPosition, portMAX_DELAY);
             positionActuelle = nouvellePosition;
             xSemaphoreGive(verrouDeLaPosition);
+            enregistrerLaTrace(nouvellePosition);
 
             if (nouvellePosition.positionValide != positionValidePrecedente) {
                 positionValidePrecedente = nouvellePosition.positionValide;
@@ -147,6 +174,7 @@ void tacheGPS(void*) {
 } // namespace
 
 PositionGPS positionGPS() {
+    if (verrouDeLaPosition == nullptr) return positionActuelle;   // module pas encore démarré
     xSemaphoreTake(verrouDeLaPosition, portMAX_DELAY);
     PositionGPS copie = positionActuelle;
     xSemaphoreGive(verrouDeLaPosition);

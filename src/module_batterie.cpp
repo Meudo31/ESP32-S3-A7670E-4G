@@ -84,6 +84,7 @@ void tacheBatterie(void*) {
 } // namespace
 
 EtatDeLaBatterie etatDeLaBatterie() {
+    if (verrouDeLEtat == nullptr) return etatActuel;   // module pas encore démarré
     xSemaphoreTake(verrouDeLEtat, portMAX_DELAY);
     EtatDeLaBatterie copie = etatActuel;
     xSemaphoreGive(verrouDeLEtat);

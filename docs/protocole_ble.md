@@ -93,6 +93,12 @@ Les arguments sont séparés du nom par un espace, et entre eux par `|`. Les nom
 | `ALERTES_TYPE type\|0\|1` | Coupe ou active un seul genre d'alerte : `demarrage`, `position` ou `deplacement` |
 | `ALERTES_TEST` | Envoie tout de suite le SMS d'état (batterie, réseau, position), même alertes coupées |
 | `WIFI_ON` | Ouvre le Wi-Fi « Moto_ESP32 » du module ; répond `nom\|mot de passe\|adresse` (voir ci-dessous) |
+| `SYNCHRO_WIFI nom\|mot de passe` | Wi-Fi de la maison (mot de passe vide = inchangé) |
+| `SYNCHRO_SERVEUR adresse\|clé` | API PostgREST / Supabase (`https://<projet>.supabase.co/rest/v1`) ; clé vide = inchangée |
+| `SYNCHRO_GOOGLE id\|secret` | Client OAuth Google ; `SYNCHRO_GOOGLE_JETON jeton` : jeton de rafraîchissement |
+| `SYNCHRO 1\|0` · `SYNCHRO_CAN 0\|1\|2` | Synchro automatique ; trames CAN : 0 carte SD, 1 Google Drive, 2 base |
+| `SYNCHRO_TESTER` | Teste réseau, mot de passe, Internet et compte Google ; résultat dans le message `wifi_test` (`etat` 0 échec, 1 réussi, 2 en cours, `msg` = explication). Lancé aussi après `SYNCHRO_WIFI` et `SYNCHRO_GOOGLE_JETON` |
+| `SYNCHRO_MAINTENANT` · `SYNCHRO_ETAT` | Synchronise tout de suite ; renvoie le message `synchro` (sans aucun secret). Voir docs/synchro_maison.md |
 | `WIFI_OFF` | Ferme le Wi-Fi du module (il se ferme aussi seul après 2 minutes sans requête) |
 | `SON_TEST` | Bip (`AT+SIMTONE`), phrase (`AT+CTTS`) et son SMS ; répond `SON_TEST` avec ce que le modem a accepté |
 | `SON_JOUER chemin` | Copie un son de la carte SD (WAV, AMR, MP3) dans le modem et le joue sur le haut-parleur |

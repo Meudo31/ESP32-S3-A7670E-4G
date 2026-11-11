@@ -168,6 +168,7 @@ void tacheReseau4G(void*) {
 } // namespace
 
 EtatDuReseau4G etatDuReseau4G() {
+    if (verrouDeLEtat == nullptr) return etatActuel;   // module pas encore démarré (le modem met plusieurs secondes)
     xSemaphoreTake(verrouDeLEtat, portMAX_DELAY);
     EtatDuReseau4G copie = etatActuel;
     xSemaphoreGive(verrouDeLEtat);
