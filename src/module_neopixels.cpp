@@ -29,9 +29,10 @@ const uint32_t DUREE_D_UNE_IMAGE_MS = 20;   // 50 images par seconde
 const int      N = NOMBRE_DE_LED_DE_LA_BANDE;
 
 const char* const NOMS_DES_ANIMATIONS[NOMBRE_D_ANIMATIONS] = {
-    "Arc-en-ciel", "Respiration", "Balayage", "Comète", "Feu de camp",
-    "Gyrophare", "Étoiles", "Chenillard", "Confettis", "Vague océan",
-    "Chenillard bleu", "État des modules", "Toutes LED éteintes",
+    // Noms en anglais (demande de Meudo, 20/11/2026), dans le même ordre qu'avant.
+    "Rainbow", "Breathing", "Sweep", "Comet", "Campfire",
+    "Beacon", "Stars", "Chaser", "Confetti", "Ocean wave",
+    "Blue chaser", "Module status", "All LEDs off",
 };
 
 // ─────────────────────────────── Outils de dessin ───────────────────────────────
@@ -144,7 +145,7 @@ void dessinerLeChenillardBleu(uint32_t temps, int premiereLed, int derniereLed) 
 
 void animationChenillardBleu(uint32_t temps) { dessinerLeChenillardBleu(temps, 0, N - 1); }
 
-// ─────────────────────────────── État des modules ───────────────────────────────
+// ─────────────────────────────── Module status (État des modules) ───────────────────────────────
 // Les premières LED montrent chacune un module, dans sa propre couleur :
 //   allumée fixe = le module fonctionne ; bref éclair toutes les 1/2 seconde = il ne fonctionne pas.
 // Les LED suivantes font le chenillard bleu.

@@ -102,7 +102,7 @@ sealed interface EtatOta {
  */
 @SuppressLint("MissingPermission")
 /** En dessous de cette taille, le Bluetooth suffit (se connecter au Wi-Fi prend quelques secondes). */
-private const val SEUIL_POUR_LE_WIFI = 100L * 1024
+private const val SEUIL_POUR_LE_WIFI = 0L   // tous les transferts de fichiers passent par le Wi-Fi (demande de Meudo, 20/11/2026)
 private const val ESSAIS_DE_MISE_A_JOUR = 3
 
 class MotoBleClient(private val context: Context, private val scope: CoroutineScope) {
@@ -353,6 +353,13 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
                 echec("Impossible de recevoir les données (appairage à refaire ?)")
                 return
             }
+        }
+        // MTU resté à 23 (négociation perdue pendant le chiffrement) : le module ne pourrait envoyer aucun
+        // message (tous « trop longs »). On le redemande une fois la liaison chiffrée.
+        if (mtu <= 23) {
+            attenteMtu = CompletableDeferred()
+            if (g.requestMtu(517)) withTimeoutOrNull(5_000) { attenteMtu?.await() }
+            ajouterAuJournal(if (mtu > 23) "MTU renégocié : $mtu octets." else "MTU toujours à 23 : le module enverra peu de données.")
         }
         _etat.value = EtatConnexion.Connecte
         reconnexion?.cancel()

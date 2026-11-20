@@ -90,7 +90,7 @@ fun EcranNeopixels(modifier: Modifier, client: MotoBleClient) {
             }
         }
 
-        if (neo != null && neo.nom == "État des modules") {
+        if (neo != null && (neo.nom == "Module status" || neo.nom == "État des modules")) {
             Carte("Signification des voyants") {
                 Text("Allumé fixe : le module fonctionne. Bref éclair toutes les 1/2 s : il ne fonctionne pas. " +
                     "Les LED suivantes font le chenillard bleu.", style = MaterialTheme.typography.bodySmall)
@@ -133,7 +133,7 @@ fun EcranNeopixels(modifier: Modifier, client: MotoBleClient) {
     }
 }
 
-/** Les voyants de l'animation « État des modules », dans l'ordre de la bande (voir module_neopixels.cpp). */
+/** Les voyants de l'animation « Module status », dans l'ordre de la bande (voir module_neopixels.cpp). */
 private val VOYANTS_DES_MODULES = listOf(
     "Carte SD" to Color(0xFFFFFFFF),
     "Modem 4G" to Color(0xFFFFB400),
