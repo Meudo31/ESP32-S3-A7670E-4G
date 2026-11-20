@@ -32,6 +32,8 @@ volatile bool decrochageAutomatique = false;                     // appels du nu
 uint32_t      debutDeLaSonnerieMs  = 0;
 bool          decrochageDejaDemande = false;
 
+void appliquerLesReglagesDuMicro();   // plus bas
+
 void envoyerLaDemande(ActionDAppel action, const String& numero = "") {
     DemandeDAppel demande = {};
     demande.action = action;
