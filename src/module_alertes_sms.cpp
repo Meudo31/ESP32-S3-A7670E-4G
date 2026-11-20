@@ -2,6 +2,7 @@
 #include <math.h>
 
 #include "configuration.h"
+#include "module_appels.h"
 #include "module_alertes_sms.h"
 #include "module_batterie.h"
 #include "module_gps.h"
@@ -226,6 +227,13 @@ bool traiterUnSMSDeCommandeDesAlertes(const String& expediteur, const String& te
     if (mot == "marche" || mot == "start" || mot == "alertes on" || mot == "alertes 1" || mot == "sms on") {
         activerLesAlertes(true);
         envoyer("Moto ESP32 : alertes SMS automatiques activees. Envoyez \"Stop\" pour les couper.", true, true);
+        return true;
+    }
+    // « Appelle » : le module rappelle ce numéro (on entend autour de la moto par le micro de la carte).
+    if (mot == "appelle" || mot == "appelle-moi" || mot == "appelle moi" || mot == "appel" || mot == "rappel" || mot == "call") {
+        if (!rappelerLeNumeroDesAlertes()) {
+            envoyer("Moto ESP32 : appel impossible (appel deja en cours ou modem sans voix).", true, true);
+        }
         return true;
     }
     return false;

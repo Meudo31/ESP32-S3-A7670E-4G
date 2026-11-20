@@ -10,7 +10,7 @@
 #include <Arduino.h>
 
 // ─── Version du firmware (affichée dans l'application). À augmenter à chaque nouvelle version. ───
-#define VERSION_DU_FIRMWARE "0.6.5"
+#define VERSION_DU_FIRMWARE "0.7.0"
 
 // ─── Nom du module dans les fichiers (photos) et en Bluetooth ───
 #define NOM_DU_MODULE_DANS_LES_FICHIERS "ESP32-A7670"
@@ -35,6 +35,10 @@
 #define BROCHE_MODEM_A                  17      // UART du modem (le sens TX/RX est détecté au démarrage)
 #define BROCHE_MODEM_B                  18
 #define VITESSE_UART_MODEM          115200
+
+// ─── Appels : micro de la carte (relié au modem, pas à l'ESP32) ───
+#define GAIN_DU_MICRO_PAR_DEFAUT          3      // AT+CMICGAIN 0..8 ; réglable depuis l'application
+#define DELAI_AVANT_DECROCHAGE_AUTOMATIQUE_MS 6000UL   // ~2 sonneries avant de décrocher seul (numéro des alertes)
 
 // ─── Broches facultatives (-1 = non câblée) ───
 // Commande d'allumage du modem (PWRKEY). Non documentée : on compte sur l'interrupteur DIP « 4G » sur ON.

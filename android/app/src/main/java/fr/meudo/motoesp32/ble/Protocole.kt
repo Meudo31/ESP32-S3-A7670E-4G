@@ -221,6 +221,9 @@ object Protocole {
                 etat = EtatAppel.Etat.entries.getOrElse(j.optInt("etat")) { EtatAppel.Etat.AUCUN },
                 numero = j.optString("num"),
                 dureeSecondes = j.optLong("duree"),
+                gainMicro = j.optInt("micg", 3),
+                microCoupe = j.optInt("muet") == 1,
+                decrochageAuto = j.optInt("auto") == 1,
             ))
             "can" -> {
                 val can = lireLeBusCan(j)
@@ -454,7 +457,14 @@ data class EtatCamera(
     val valeurs: Map<String, Int>, val nonPrisEnCharge: Set<String>,
 )
 
-data class EtatAppel(val etat: Etat, val numero: String, val dureeSecondes: Long) {
+data class EtatAppel(
+    val etat: Etat,
+    val numero: String,
+    val dureeSecondes: Long,
+    val gainMicro: Int = 3,
+    val microCoupe: Boolean = false,
+    val decrochageAuto: Boolean = false,
+) {
     enum class Etat { AUCUN, SONNERIE, NUMEROTATION, EN_COMMUNICATION }
 }
 

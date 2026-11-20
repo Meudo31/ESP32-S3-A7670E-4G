@@ -364,6 +364,32 @@ void commandeRaccrocher(const char* nom, const ArgumentsDeCommande&) {
     repondreALAppli(nom, true, "Raccroché");
 }
 
+void commandeGainDuMicro(const char* nom, const ArgumentsDeCommande& arguments) {
+    const bool reussi = reglerLeGainDuMicro(arguments.premier.toInt());
+    repondreALAppli(nom, reussi, reussi ? "Gain du micro réglé" : "Gain de 0 à 8");
+}
+
+void commandeCouperLeMicro(const char* nom, const ArgumentsDeCommande& arguments) {
+    const bool coupe = arguments.premier == "1";
+    couperLeMicro(coupe);
+    repondreALAppli(nom, true, coupe ? "Micro coupé" : "Micro ouvert");
+}
+
+void commandeTesterLeMicro(const char*, const ArgumentsDeCommande&) {
+    testerLeMicroDuModule();   // réponse MICRO_TEST dans quelques secondes
+}
+
+void commandeDecrochageAutomatique(const char* nom, const ArgumentsDeCommande& arguments) {
+    const bool actif = arguments.premier == "1";
+    activerLeDecrochageAutomatique(actif);
+    repondreALAppli(nom, true, actif ? "Décrochage automatique du numéro des alertes activé" : "Décrochage automatique coupé");
+}
+
+void commandeToucheDTMF(const char* nom, const ArgumentsDeCommande& arguments) {
+    const bool reussi = envoyerUneToucheDTMF(arguments.premier);
+    if (!reussi) repondreALAppli(nom, false, "Pas en communication, ou touche invalide");
+}
+
 void commandeVolume(const char* nom, const ArgumentsDeCommande& arguments) {
     reglerLeVolumeDuHautParleur(arguments.premier.toInt());
     repondreALAppli(nom, true, "Volume réglé");
@@ -592,6 +618,11 @@ const CommandeConnue COMMANDES[] = {
     { "APPELER",             commandeAppeler },
     { "DECROCHER",           commandeDecrocher },
     { "RACCROCHER",          commandeRaccrocher },
+    { "MICRO_GAIN",          commandeGainDuMicro },
+    { "MICRO_MUET",          commandeCouperLeMicro },
+    { "MICRO_TEST",          commandeTesterLeMicro },
+    { "APPEL_AUTO",          commandeDecrochageAutomatique },
+    { "DTMF",                commandeToucheDTMF },
     { "VOLUME",              commandeVolume },
     { "SONS_INSTALLER",      commandeInstallerLesSons },
     { "ANNONCER",            commandeAnnoncer },

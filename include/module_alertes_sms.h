@@ -15,6 +15,7 @@
    On peut tout couper (interrupteur général) ou seulement un genre d'alerte, depuis
    l'application ou par SMS envoyé depuis le numéro des alertes :
      « Stop » (ou « Arrêt ») coupe les alertes, « Marche » les remet ; le module répond par SMS.
+     « Appelle » : le module appelle ce numéro (micro de la carte + haut-parleur).
    Ces réglages sont gardés dans la mémoire permanente (ils survivent au redémarrage).
    ══════════════════════════════════════════════════════════════════════════════ */
 
@@ -30,7 +31,7 @@ enum class TypeDAlerte { DEMARRAGE, POSITION, DEPLACEMENT };
 void   activerUneAlerte(TypeDAlerte type, bool active);
 bool   uneAlerteEstActive(TypeDAlerte type);
 
-// SMS reçu : si c'est « Stop » ou « Marche » venant du numéro des alertes, l'exécute et renvoie true.
+// SMS reçu : si c'est « Stop », « Marche » ou « Appelle » venant du numéro des alertes, l'exécute et renvoie true.
 bool   traiterUnSMSDeCommandeDesAlertes(const String& expediteur, const String& texte);
 
 bool demarrerModuleAlertesSMS();
