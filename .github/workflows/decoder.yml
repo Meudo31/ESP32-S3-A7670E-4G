@@ -1,0 +1,21 @@
+name: Decoder plantage
+on:
+  push:
+    branches: [decoder-plantage]
+jobs:
+  decoder:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: 44751603015
+          name: firmware-elf
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: elf
+      - run: pip install platformio && pio pkg install -g -t "espressif/toolchain-xtensa-esp32s3"
+      - run: |
+          A2L=$(find ~/.platformio/packages -name 'xtensa-esp32s3-elf-addr2line' | head -1)
+          sha256sum elf/firmware.elf
+          $A2L -pfiaC -e elf/firmware.elf 0x400396c0 0x42109b2b 0x42109bfe 0x4205637e 0x42147045 0x4206758b 0x42066ebd 0x4206219c 0x4206235d 0x4205a13d 0x4205a3b6 0x4205057e 0x4204fe3a 0x42058d63
