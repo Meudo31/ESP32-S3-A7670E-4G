@@ -71,8 +71,20 @@ class TransfertWifi(private val context: Context) {
             kotlinx.coroutines.delay(500)
         }
         quitter()
-        return "Le module ne répond pas sur le Wi-Fi ($raisonDuDernierEchec)"
+        if (vpnActif()) {
+            return "Le module ne répond pas sur le Wi-Fi : un VPN est actif sur ce téléphone. " +
+                "Désactive ton VPN pendant la mise à jour, puis réessaie ($raisonDuDernierEchec)"
+        }
+        return "Le module ne répond pas sur le Wi-Fi. Si un VPN est actif sur ce téléphone, " +
+            "désactive-le puis réessaie ($raisonDuDernierEchec)"
     }
+
+    /** Un VPN détourne les requêtes vers 192.168.4.1 et empêche de joindre le module (vu chez Meudo, 20/11/2026). */
+    private fun vpnActif(): Boolean = runCatching {
+        connectivite.allNetworks.any {
+            connectivite.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
+        }
+    }.getOrDefault(false)
 
     fun quitter() {
         rappel?.let { runCatching { connectivite.unregisterNetworkCallback(it) } }
