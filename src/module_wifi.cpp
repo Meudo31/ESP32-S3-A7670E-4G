@@ -3,6 +3,7 @@
 #include <Update.h>
 #include <Preferences.h>
 #include <esp_random.h>
+#include <esp_coexist.h>
 
 #include "configuration.h"
 #include "module_wifi.h"
@@ -25,6 +26,11 @@ volatile bool    fermetureDemandee = false;
 volatile bool    ouvert            = false;
 uint32_t         derniereActivite  = 0;
 TaskHandle_t     tacheWifi         = nullptr;
+
+// Le Wi-Fi et le Bluetooth partagent la même antenne. Point d'accès ouvert mais sans transfert :
+// priorité au Bluetooth (sinon le téléphone perd la liaison Bluetooth, raison 0x22). Pendant un
+// transfert Wi-Fi : priorité au Wi-Fi. Point d'accès fermé : partage équilibré.
+void prioriteRadio(esp_coex_prefer_t priorite) { esp_coex_preference_set(priorite); }
 
 // ─────────────────────────────── Envoi d'un fichier vers la carte SD ───────────────────────────────
 
@@ -66,6 +72,7 @@ void recevoirUnMorceauDeFichier() {
     derniereActivite = millis();
     switch (envoi.status) {
         case UPLOAD_FILE_START: {
+            prioriteRadio(ESP_COEX_PREFER_WIFI);
             oublierLeFichierRecu(true);
             recu.cheminFinal = serveur.arg("chemin");
             if (!recu.cheminFinal.startsWith("/") || recu.cheminFinal.endsWith("/")) {
@@ -120,6 +127,7 @@ void terminerLEnvoiDUnFichier() {
     if (reussi) serveur.send(200, "text/plain", "OK");
     else        serveur.send(500, "text/plain", recu.message.length() ? recu.message : String("Échec"));
     oublierLeFichierRecu(!reussi);
+    prioriteRadio(ESP_COEX_PREFER_BT);
 }
 
 // ─────────────────────────────── Téléchargement d'un fichier de la carte SD ───────────────────────────────
@@ -172,6 +180,7 @@ void recevoirUnMorceauDeFirmware() {
     derniereActivite = millis();
     switch (envoi.status) {
         case UPLOAD_FILE_START:
+            prioriteRadio(ESP_COEX_PREFER_WIFI);
             erreurDeMiseAJour = false;
             messageDeMiseAJour = "";
             annulerLaMiseAJourEnCours();   // au cas où une mise à jour par Bluetooth serait en cours
@@ -202,6 +211,7 @@ void recevoirUnMorceauDeFirmware() {
 
 void terminerLaMiseAJour() {
     if (erreurDeMiseAJour) {
+        prioriteRadio(ESP_COEX_PREFER_BT);
         ecrireDansLeJournal("[WIFI] Mise à jour refusée : %s.", messageDeMiseAJour.c_str());
         serveur.send(500, "text/plain", messageDeMiseAJour);
         return;
@@ -229,6 +239,7 @@ void allumer() {
     // vraiment prêt. Sans cette attente, un arrêt rapide (WIFI_OFF juste après WIFI_ON) coupait le Wi-Fi
     // pendant que lwIP l'utilisait encore : plantage LoadProhibited dans ieee80211_output (0.7.2).
     WiFi.waitStatusBits(AP_STARTED_BIT, 3000);
+    prioriteRadio(ESP_COEX_PREFER_BT);
     vTaskDelay(pdMS_TO_TICKS(300));
     serveur.begin();
     ouvert = true;
@@ -245,6 +256,7 @@ void eteindre() {
     vTaskDelay(pdMS_TO_TICKS(300));
     WiFi.mode(WIFI_OFF);
     vTaskDelay(pdMS_TO_TICKS(200));
+    prioriteRadio(ESP_COEX_PREFER_BALANCE);
     ouvert = false;
     ecrireDansLeJournal("[WIFI] Point d'accès fermé.");
 }

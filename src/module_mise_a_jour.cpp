@@ -5,6 +5,8 @@
 #include "module_appli.h"
 #include "module_journal.h"
 #include "module_systeme.h"
+#include "module_wifi.h"
+#include "module_synchro.h"
 
 namespace {
 
@@ -45,6 +47,11 @@ void commencer(const char* arguments) {
         repondre("ERR fichier trop gros pour la partition de mise à jour");
         return;
     }
+    // Mise à jour par Bluetooth : on coupe le Wi-Fi (point d'accès resté ouvert après un essai Wi-Fi raté,
+    // ou synchro maison). Les deux radios partagent l'antenne : avec le Wi-Fi allumé, le Bluetooth
+    // tombait à 1 Ko/s.
+    fermerLeWifi();
+    interrompreLaSynchronisation();
     if (enCours || Update.isRunning()) Update.abort();   // y compris un envoi Wi-Fi coupé net
     if (!Update.begin(taille, U_FLASH)) { echouer("début"); return; }
     if (nombreDeValeurs == 2 && strlen(empreinteMD5) == 32 && !Update.setMD5(empreinteMD5)) { echouer("md5"); return; }
