@@ -91,11 +91,17 @@ void traiterUnOrdre(const MessageDeMiseAJour& message) {
 void ecrireUnMorceau(const MessageDeMiseAJour& message) {
     if (!enCours) return;
     // Une image d'application ESP32 commence toujours par l'octet 0xE9.
-    if (tailleRecue == 0 && message.taille > 0 && message.octets[0] != 0xE9) {
-        Update.abort();
-        enCours = false;
-        repondre("ERR ce n'est pas un firmware ESP32");
-        return;
+    if (tailleRecue == 0) {
+        const char* probleme = problemeDansLeDebutDuFirmware(message.octets, message.taille);
+        if (probleme != nullptr) {
+            Update.abort();
+            enCours = false;
+            char texte[120];
+            snprintf(texte, sizeof(texte), "ERR %s", probleme);
+            ecrireDansLeJournal("[MISE A JOUR] Refusée : %s.", probleme);
+            repondre(texte);
+            return;
+        }
     }
     if (tailleRecue + message.taille > tailleAttendue) {
         Update.abort();
@@ -161,6 +167,16 @@ void annulerLaMiseAJourEnCours() {
 }
 
 bool miseAJourEnCours() { return enCours; }
+
+const char* problemeDansLeDebutDuFirmware(const uint8_t* octets, size_t taille) {
+    if (taille == 0 || octets[0] != 0xE9) return "ce n'est pas un firmware ESP32";
+    if (taille < 36) return nullptr;   // morceau trop court pour vérifier davantage (liaison à petit MTU)
+    // Un programme ESP-IDF porte sa description (esp_app_desc_t, mot magique 0xABCD5432) juste après
+    // l'en-tête de l'image (24 octets) et celui du premier segment (8 octets). Le bootloader n'en a pas.
+    const uint32_t motMagique = octets[32] | (octets[33] << 8) | (octets[34] << 16) | ((uint32_t)octets[35] << 24);
+    if (motMagique != 0xABCD5432UL) return "image complète pour l'USB : envoyer firmware.bin, pas firmware-complet-0x0.bin";
+    return nullptr;
+}
 
 void redemarrerDansQuelquesInstants(uint32_t delaiMs) {
     momentDuRedemarrage = millis() + delaiMs;

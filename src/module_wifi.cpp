@@ -182,6 +182,10 @@ void recevoirUnMorceauDeFirmware() {
             if (!Update.begin(UPDATE_SIZE_UNKNOWN)) { erreurDeMiseAJour = true; messageDeMiseAJour = Update.errorString(); }
             break;
         case UPLOAD_FILE_WRITE:
+            if (!erreurDeMiseAJour && envoi.totalSize == 0) {   // tout premier morceau (totalSize n'est compté qu'après)
+                const char* probleme = problemeDansLeDebutDuFirmware(envoi.buf, envoi.currentSize);
+                if (probleme != nullptr) { Update.abort(); erreurDeMiseAJour = true; messageDeMiseAJour = probleme; }
+            }
             if (!erreurDeMiseAJour && Update.write(envoi.buf, envoi.currentSize) != envoi.currentSize) {
                 erreurDeMiseAJour = true; messageDeMiseAJour = Update.errorString();
             }
