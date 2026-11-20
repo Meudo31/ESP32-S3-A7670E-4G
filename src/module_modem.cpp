@@ -169,7 +169,7 @@ void lireLIdentiteDuModem() {
     // Les variantes sans voix refusent les commandes audio.
     identite.voixDisponible = envoyerSansVerifierQueLeModemEstPret("AT+CLVL?", nullptr, 2000) == ResultatAT::OK;
     ecrireDansLeJournal("[MODEM] Modèle %s, logiciel %s. Voix et haut-parleur : %s.", identite.modele.c_str(),
-                        identite.versionLogiciel.c_str(), identite.voixDisponible ? "disponibles" : "NON disponibles sur ce modèle");
+                        identite.versionLogiciel.c_str(), identite.voixDisponible ? "disponibles" : "AT+CLVL? refusé (peut-être pas de voix ; un appel reste possible à tester)");
 }
 
 void attendreLaCarteSIM() {

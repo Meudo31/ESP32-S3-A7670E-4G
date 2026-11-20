@@ -342,7 +342,7 @@ void commandeSupprimerUnSMS(const char* nom, const ArgumentsDeCommande& argument
 
 void commandeAppeler(const char* nom, const ArgumentsDeCommande& arguments) {
     const bool lance = appeler(arguments.premier);
-    repondreALAppli(nom, lance, lance ? "Appel en cours" : "Numéro vide ou modem sans voix");
+    repondreALAppli(nom, lance, lance ? "Appel en cours" : "Numéro vide");
 }
 
 void commandeDecrocher(const char* nom, const ArgumentsDeCommande&) {

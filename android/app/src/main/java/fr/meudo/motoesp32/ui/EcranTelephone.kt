@@ -153,8 +153,12 @@ private fun OngletAppels(client: MotoBleClient) {
 
     Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (etat.sim?.voixDisponible == false) {
-            Carte("Appels indisponibles") {
-                Text("Ce modèle de modem (${etat.sim?.modele}) n'a pas de fonction voix.", color = MaterialTheme.colorScheme.error)
+            Carte("Appels peut-être indisponibles") {
+                Text(
+                    "Ce modem (${etat.sim?.modele}) a refusé une commande audio : il n'a peut-être pas de fonction voix. " +
+                        "Tu peux quand même essayer d'appeler : le journal affichera la réponse exacte du modem.",
+                    color = MaterialTheme.colorScheme.error,
+                )
             }
         }
         Carte("Appel en cours") {
