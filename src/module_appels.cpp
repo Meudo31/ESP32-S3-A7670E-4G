@@ -140,10 +140,17 @@ void executer(const DemandeDAppel& demande) {
     switch (demande.action) {
         case ActionDAppel::APPELER: {
             String numero(demande.numero);
-            if (envoyerCommandeAT(String("ATD") + numero + ";", nullptr, 10000) == ResultatAT::OK) {
+            String reponse;
+            const ResultatAT resultat = envoyerCommandeAT(String("ATD") + numero + ";", &reponse, 10000);
+            if (resultat == ResultatAT::OK) {
                 changerDEtat(EtatDUnAppel::NUMEROTATION, numero);
+                ecrireDansLeJournal("[APPELS] Le modem accepte d'appeler %s.", demande.numero);
             } else {
-                ecrireDansLeJournal("[APPELS] Le modem refuse d'appeler %s.", demande.numero);
+                reponse.trim();
+                ecrireDansLeJournal("[APPELS] Le modem refuse d'appeler %s : %s.", demande.numero,
+                                    resultat == ResultatAT::DELAI_DEPASSE ? "pas de réponse en 10 s"
+                                    : resultat == ResultatAT::MODEM_ABSENT ? "modem absent"
+                                    : reponse.length() ? reponse.c_str() : "ERROR");
             }
             break;
         }
@@ -262,7 +269,9 @@ const char* nomDeLEtatDUnAppel(EtatDUnAppel etat) {
 }
 
 bool appeler(const String& numero) {
-    if (numero.isEmpty() || !identiteDuModem().voixDisponible) return false;
+    // Le test du démarrage (AT+CLVL?) n'est qu'un indice : on tente quand même l'appel, et la réponse exacte
+    // du modem est notée dans le journal (demande de Meudo, 20/11/2026, modem A7670E-FASE).
+    if (numero.isEmpty()) return false;
     envoyerLaDemande(ActionDAppel::APPELER, numero);
     return true;
 }

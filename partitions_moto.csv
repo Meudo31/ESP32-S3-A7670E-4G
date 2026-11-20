@@ -1,0 +1,12 @@
+# Table des partitions du module moto (flash de 16 Mo).
+# Identique à default_16MB.csv d'Arduino (mêmes adresses pour app0 / app1 : les mises à jour par l'appli
+# restent compatibles), sauf la partition « coredump » agrandie de 64 Ko à 256 Ko : avec ~40 tâches,
+# 64 Ko ne suffisaient pas pour enregistrer un plantage (« Not enough space to save core dump »).
+# ⚠️ Une nouvelle table des partitions ne s'installe que par USB (partitions.bin à l'adresse 0x8000).
+# Name,   Type, SubType, Offset,   Size,     Flags
+nvs,      data, nvs,     0x9000,   0x5000,
+otadata,  data, ota,     0xe000,   0x2000,
+app0,     app,  ota_0,   0x10000,  0x640000,
+app1,     app,  ota_1,   0x650000, 0x640000,
+spiffs,   data, spiffs,  0xc90000, 0x330000,
+coredump, data, coredump,0xfc0000, 0x40000,

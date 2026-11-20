@@ -3,6 +3,7 @@
 #include <Update.h>
 #include <Preferences.h>
 #include <esp_random.h>
+#include <esp_coexist.h>
 
 #include "configuration.h"
 #include "module_wifi.h"
@@ -25,6 +26,11 @@ volatile bool    fermetureDemandee = false;
 volatile bool    ouvert            = false;
 uint32_t         derniereActivite  = 0;
 TaskHandle_t     tacheWifi         = nullptr;
+
+// Le Wi-Fi et le Bluetooth partagent la même antenne. Point d'accès ouvert mais sans transfert :
+// priorité au Bluetooth (sinon le téléphone perd la liaison Bluetooth, raison 0x22). Pendant un
+// transfert Wi-Fi : priorité au Wi-Fi. Point d'accès fermé : partage équilibré.
+void prioriteRadio(esp_coex_prefer_t priorite) { esp_coex_preference_set(priorite); }
 
 // ─────────────────────────────── Envoi d'un fichier vers la carte SD ───────────────────────────────
 
@@ -66,6 +72,7 @@ void recevoirUnMorceauDeFichier() {
     derniereActivite = millis();
     switch (envoi.status) {
         case UPLOAD_FILE_START: {
+            prioriteRadio(ESP_COEX_PREFER_WIFI);
             oublierLeFichierRecu(true);
             recu.cheminFinal = serveur.arg("chemin");
             if (!recu.cheminFinal.startsWith("/") || recu.cheminFinal.endsWith("/")) {
@@ -172,6 +179,7 @@ void recevoirUnMorceauDeFirmware() {
     derniereActivite = millis();
     switch (envoi.status) {
         case UPLOAD_FILE_START:
+            prioriteRadio(ESP_COEX_PREFER_WIFI);
             erreurDeMiseAJour = false;
             messageDeMiseAJour = "";
             annulerLaMiseAJourEnCours();   // au cas où une mise à jour par Bluetooth serait en cours
@@ -182,6 +190,10 @@ void recevoirUnMorceauDeFirmware() {
             if (!Update.begin(UPDATE_SIZE_UNKNOWN)) { erreurDeMiseAJour = true; messageDeMiseAJour = Update.errorString(); }
             break;
         case UPLOAD_FILE_WRITE:
+            if (!erreurDeMiseAJour && envoi.totalSize == 0) {   // tout premier morceau (totalSize n'est compté qu'après)
+                const char* probleme = problemeDansLeDebutDuFirmware(envoi.buf, envoi.currentSize);
+                if (probleme != nullptr) { Update.abort(); erreurDeMiseAJour = true; messageDeMiseAJour = probleme; }
+            }
             if (!erreurDeMiseAJour && Update.write(envoi.buf, envoi.currentSize) != envoi.currentSize) {
                 erreurDeMiseAJour = true; messageDeMiseAJour = Update.errorString();
             }
@@ -221,6 +233,12 @@ void allumer() {
     interrompreLaSynchronisation();   // le Wi-Fi de la maison et le point d'accès ne vont pas ensemble
     WiFi.mode(WIFI_AP);
     WiFi.softAP(NOM_DU_WIFI, motDePasseDuWifi.c_str(), 6, 0, 1);   // canal 6, visible, un seul téléphone
+    // Le démarrage du point d'accès finit dans une autre tâche (lwIP, cœur 0) : on attend qu'il soit
+    // vraiment prêt. Sans cette attente, un arrêt rapide (WIFI_OFF juste après WIFI_ON) coupait le Wi-Fi
+    // pendant que lwIP l'utilisait encore : plantage LoadProhibited dans ieee80211_output (0.7.2).
+    WiFi.waitStatusBits(AP_STARTED_BIT, 3000);
+    prioriteRadio(ESP_COEX_PREFER_BT);
+    vTaskDelay(pdMS_TO_TICKS(300));
     serveur.begin();
     ouvert = true;
     derniereActivite = millis();
@@ -230,8 +248,13 @@ void allumer() {
 void eteindre() {
     serveur.stop();
     oublierLeFichierRecu(true);
-    WiFi.softAPdisconnect(true);
+    // Laisse lwIP finir ce qu'il envoyait (fermeture des connexions, annonces) avant d'arrêter le Wi-Fi.
+    vTaskDelay(pdMS_TO_TICKS(300));
+    WiFi.softAPdisconnect(false);
+    vTaskDelay(pdMS_TO_TICKS(300));
     WiFi.mode(WIFI_OFF);
+    vTaskDelay(pdMS_TO_TICKS(200));
+    prioriteRadio(ESP_COEX_PREFER_BALANCE);
     ouvert = false;
     ecrireDansLeJournal("[WIFI] Point d'accès fermé.");
 }
@@ -246,6 +269,18 @@ void tacheDuWifi(void*) {
         ouvertureDemandee = false;
         if (!ouvert) continue;
         serveur.handleClient();
+        // Tant qu'aucun téléphone n'est connecté au point d'accès : priorité au Bluetooth (sinon il décroche).
+        // Dès qu'un téléphone a rejoint le Wi-Fi : priorité au Wi-Fi, sinon les échanges HTTP (ping, envoi)
+        // n'ont presque plus de temps radio et l'appli conclut « le module ne répond pas sur le Wi-Fi ».
+        {
+            static int telephonesAvant = -1;
+            const int telephones = WiFi.softAPgetStationNum();
+            if (telephones != telephonesAvant) {
+                telephonesAvant = telephones;
+                prioriteRadio(telephones > 0 ? ESP_COEX_PREFER_WIFI : ESP_COEX_PREFER_BT);
+                ecrireDansLeJournal("[WIFI] %d téléphone(s) connecté(s) au point d'accès.", telephones);
+            }
+        }
         if (fermetureDemandee || millis() - derniereActivite > ARRET_APRES_INACTIVITE_MS) {
             fermetureDemandee = false;
             eteindre();

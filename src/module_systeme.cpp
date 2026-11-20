@@ -2,6 +2,7 @@
 #include <Preferences.h>
 #include <esp_ota_ops.h>
 #include <esp_system.h>
+#include <esp_core_dump.h>
 
 #include "configuration.h"
 #include "module_systeme.h"
@@ -17,6 +18,7 @@ namespace {
 TacheSurveillee listeDesTaches[NOMBRE_MAXIMUM_DE_TACHES];
 int             nombreDeTaches = 0;
 uint32_t        compteurDeDemarrages = 0;
+String          rapportDuDernierPlantage;   // "" = aucun plantage enregistré
 
 // En dessous de cette pile restante, on prévient dans le journal.
 const uint32_t PILE_RESTANTE_INQUIETANTE = 512;
@@ -26,6 +28,53 @@ void compterCeDemarrage() {
     memoirePermanente.begin("systeme", false);
     compteurDeDemarrages = memoirePermanente.getUInt("demarrages", 0) + 1;
     memoirePermanente.putUInt("demarrages", compteurDeDemarrages);
+    memoirePermanente.end();
+}
+
+const char* nomDeLException(uint32_t cause) {
+    switch (cause) {
+        case 0:  return "instruction invalide";
+        case 2:  return "erreur de lecture d'instruction";
+        case 3:  return "erreur d'accès mémoire";
+        case 6:  return "division par zéro";
+        case 9:  return "accès mal aligné";
+        case 28: return "lecture interdite (pointeur nul ?)";
+        case 29: return "écriture interdite (pointeur nul ?)";
+        default: return "autre";
+    }
+}
+
+// Lors d'un plantage (exception, chien de garde), l'ESP32 enregistre l'état du programme dans la
+// partition « coredump » de la flash. Au démarrage suivant, on en tire un résumé lisible :
+// la tâche fautive et les adresses du programme où elle se trouvait (à décoder avec le fichier
+// firmware.elf de la même compilation). Le résumé est gardé en mémoire permanente jusqu'au
+// plantage suivant, puis l'enregistrement est effacé pour faire place au prochain.
+void lireLeRapportDePlantage() {
+    Preferences memoirePermanente;
+    memoirePermanente.begin("systeme", false);
+    size_t adresse = 0, taille = 0;
+    if (esp_core_dump_image_get(&adresse, &taille) == ESP_OK && taille > 0) {
+        esp_core_dump_summary_t* resume = (esp_core_dump_summary_t*)calloc(1, sizeof(esp_core_dump_summary_t));
+        if (resume != nullptr && esp_core_dump_get_summary(resume) == ESP_OK) {
+            char texte[300];
+            int longueur = snprintf(texte, sizeof(texte), "Démarrage n°%u : %s, tâche « %.16s », PC 0x%08lx, %s (cause %lu). Pile :",
+                                    (unsigned)compteurDeDemarrages, raisonDuDernierRedemarrage(), resume->exc_task,
+                                    (unsigned long)resume->exc_pc, nomDeLException(resume->ex_info.exc_cause),
+                                    (unsigned long)resume->ex_info.exc_cause);
+            const uint32_t profondeur = min<uint32_t>(resume->exc_bt_info.depth, 10);
+            for (uint32_t i = 0; i < profondeur && longueur > 0 && longueur < (int)sizeof(texte) - 12; i++) {
+                longueur += snprintf(texte + longueur, sizeof(texte) - longueur, " 0x%08lx", (unsigned long)resume->exc_bt_info.bt[i]);
+            }
+            if (resume->exc_bt_info.corrupted && longueur > 0 && longueur < (int)sizeof(texte) - 14) {
+                snprintf(texte + longueur, sizeof(texte) - longueur, " (pile abîmée)");
+            }
+            memoirePermanente.putString("plantage", texte);
+            memoirePermanente.putUInt("plantages", memoirePermanente.getUInt("plantages", 0) + 1);
+        }
+        free(resume);
+        esp_core_dump_image_erase();
+    }
+    rapportDuDernierPlantage = memoirePermanente.getString("plantage", "");
     memoirePermanente.end();
 }
 
@@ -81,6 +130,13 @@ int nombreDeTachesSurveillees() { return nombreDeTaches; }
 const TacheSurveillee& tacheSurveillee(int numero) { return listeDesTaches[numero]; }
 
 // ─────────────────────────────── Informations ───────────────────────────────
+
+const String& rapportDePlantage() { return rapportDuDernierPlantage; }
+
+void decrireLeDernierPlantage(JsonDocument& document) {
+    document["t"]   = "plantage";
+    document["txt"] = rapportDuDernierPlantage;
+}
 
 const char* raisonDuDernierRedemarrage() {
     switch (esp_reset_reason()) {
@@ -157,9 +213,11 @@ size_t plusGrandBlocInterne() { return heap_caps_get_largest_free_block(MALLOC_C
 
 bool demarrerModuleSysteme() {
     compterCeDemarrage();
+    lireLeRapportDePlantage();
     ecrireDansLeJournal("[SYSTEME] Démarrage n°%u. Raison : %s.", (unsigned)compteurDeDemarrages, raisonDuDernierRedemarrage());
     ecrireDansLeJournal("[SYSTEME] %s rév. %d, %d cœurs à %u MHz, flash %u Mo, PSRAM %u Ko.",
                         ESP.getChipModel(), ESP.getChipRevision(), ESP.getChipCores(), (unsigned)ESP.getCpuFreqMHz(),
                         (unsigned)(ESP.getFlashChipSize() / (1024 * 1024)), (unsigned)(ESP.getPsramSize() / 1024));
+    if (!rapportDuDernierPlantage.isEmpty()) ecrireDansLeJournal("[SYSTEME] Dernier plantage : %s", rapportDuDernierPlantage.c_str());
     return creerTacheSurveillee(tacheSysteme, "Systeme", 3072, PRIORITE_BASSE, COEUR_TRAITEMENTS);
 }

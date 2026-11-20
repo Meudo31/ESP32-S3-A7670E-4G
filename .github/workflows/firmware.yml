@@ -6,12 +6,14 @@ on:
       - "src/**"
       - "include/**"
       - "platformio.ini"
+      - "partitions_moto.csv"
       - ".github/workflows/firmware.yml"
   pull_request:
     paths:
       - "src/**"
       - "include/**"
       - "platformio.ini"
+      - "partitions_moto.csv"
       - ".github/workflows/firmware.yml"
   workflow_dispatch:
 
@@ -43,11 +45,39 @@ jobs:
       - name: Compilation
         run: pio run
 
+      # Image complète (bootloader + table des partitions + boot_app0 + programme), à écrire à l'adresse 0x0
+      # par USB avec un outil de flash (esptool, web flasher). firmware.bin seul ne s'écrit qu'à 0x10000
+      # ou par la mise à jour de l'appli : écrit à 0x0, il écrase le bootloader et la carte ne démarre plus.
+      - name: Image complète pour le flash par USB (adresse 0x0)
+        run: |
+          B=.pio/build/esp32-s3-devkitc-1
+          python ~/.platformio/packages/tool-esptoolpy/esptool.py --chip esp32s3 merge_bin -o $B/firmware-complet-0x0.bin \
+            --flash_mode dio --flash_freq 80m --flash_size 16MB \
+            0x0 $B/bootloader.bin 0x8000 $B/partitions.bin \
+            0xe000 ~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin \
+            0x10000 $B/firmware.bin
+          cp ~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin $B/boot_app0.bin
+          ls -l $B/*.bin
+
+      - name: Publier l'image complète (flash USB à 0x0)
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-complet-0x0
+          path: .pio/build/esp32-s3-devkitc-1/firmware-complet-0x0.bin
+
       - name: Publier firmware.bin (pour la mise à jour par l'application)
         uses: actions/upload-artifact@v4
         with:
           name: firmware-esp32
           path: .pio/build/esp32-s3-devkitc-1/firmware.bin
+
+      # Fichier de symboles de la même compilation : il sert à traduire les adresses d'un rapport de plantage
+      # (écran Système de l'appli) en noms de fonctions et numéros de ligne.
+      - name: Publier firmware.elf (décodage des plantages)
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-elf
+          path: .pio/build/esp32-s3-devkitc-1/firmware.elf
 
       # Lien direct, sans zip et sans compte GitHub (compilé avec le code PIN d'exemple 123456) :
       # https://github.com/Meudo31/ESP32-S3-A7670E-4G/releases/download/firmware-test/firmware.bin
@@ -59,4 +89,6 @@ jobs:
           gh release view firmware-test >/dev/null 2>&1 || gh release create firmware-test --prerelease \
             --target "$GITHUB_SHA" --title "Firmware ESP32 (dernière version de test)" --notes "Firmware de test."
           gh release upload firmware-test .pio/build/esp32-s3-devkitc-1/firmware.bin --clobber
+          B=.pio/build/esp32-s3-devkitc-1
+          gh release upload firmware-test $B/firmware-complet-0x0.bin $B/bootloader.bin $B/partitions.bin $B/boot_app0.bin --clobber
           gh release edit firmware-test --notes "Firmware compilé depuis la branche ${GITHUB_REF_NAME}, commit ${GITHUB_SHA::7}, le $(date -u '+%d/%m/%Y à %H:%M') UTC. Code PIN Bluetooth : 123456 (celui de include/secrets.example.h)."

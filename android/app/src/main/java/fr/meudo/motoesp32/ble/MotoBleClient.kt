@@ -102,7 +102,7 @@ sealed interface EtatOta {
  */
 @SuppressLint("MissingPermission")
 /** En dessous de cette taille, le Bluetooth suffit (se connecter au Wi-Fi prend quelques secondes). */
-private const val SEUIL_POUR_LE_WIFI = 100L * 1024
+private const val SEUIL_POUR_LE_WIFI = 0L   // tous les transferts de fichiers passent par le Wi-Fi (demande de Meudo, 20/11/2026)
 private const val ESSAIS_DE_MISE_A_JOUR = 3
 
 class MotoBleClient(private val context: Context, private val scope: CoroutineScope) {
@@ -354,6 +354,13 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
                 return
             }
         }
+        // MTU resté à 23 (négociation perdue pendant le chiffrement) : le module ne pourrait envoyer aucun
+        // message (tous « trop longs »). On le redemande une fois la liaison chiffrée.
+        if (mtu <= 23) {
+            attenteMtu = CompletableDeferred()
+            if (g.requestMtu(517)) withTimeoutOrNull(5_000) { attenteMtu?.await() }
+            ajouterAuJournal(if (mtu > 23) "MTU renégocié : $mtu octets." else "MTU toujours à 23 : le module enverra peu de données.")
+        }
         _etat.value = EtatConnexion.Connecte
         reconnexion?.cancel()
         tentativesDeReconnexion = 0
@@ -479,9 +486,16 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
 
     /** Envoie un firmware (.bin produit par PlatformIO) au module. */
     fun mettreAJour(firmware: ByteArray) {
-        if (_ota.value is EtatOta.EnCours) return
-        scope.launch { executerMiseAJour(firmware) }
+        // Une seule mise à jour à la fois. L'état passe à « en cours » tout de suite (et pas seulement quand
+        // l'envoi commence) : un deuxième choix de fichier pendant la connexion au Wi-Fi lançait une deuxième
+        // mise à jour en parallèle. Les deux se coupaient le Wi-Fi et se gênaient sur le Bluetooth
+        // (« Refusée : ce n'est pas un firmware ESP32 », envoi à 1 Ko/s).
+        if (_ota.value is EtatOta.EnCours || miseAJourEnCours?.isActive == true) return
+        _ota.value = EtatOta.EnCours(0f, "Préparation…")
+        miseAJourEnCours = scope.launch { executerMiseAJour(firmware) }
     }
+
+    private var miseAJourEnCours: kotlinx.coroutines.Job? = null
 
     fun signalerErreurOta(message: String) { _ota.value = EtatOta.Erreur(message) }
 

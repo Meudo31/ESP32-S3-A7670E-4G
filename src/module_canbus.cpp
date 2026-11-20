@@ -1,3 +1,4 @@
+#include <driver/gpio.h>
 #include <Preferences.h>
 #include <driver/twai.h>
 #include <math.h>
@@ -416,6 +417,9 @@ bool demarrerLePilote(int kbits) {
     const twai_timing_config_t vitesse = reglageDeVitesse(kbits);
     const twai_filter_config_t filtre = TWAI_FILTER_CONFIG_ACCEPT_ALL();
     if (twai_driver_install(&general, &vitesse, &filtre) != ESP_OK) return false;
+    // Sans transceiver branché, l'entrée RX flotte : le bruit ferait une rafale d'erreurs de bus,
+    // donc une rafale d'interruptions. Le tirage vers le haut la tient à l'état « repos » du bus.
+    gpio_pullup_en((gpio_num_t)BROCHE_CAN_RX);
     if (twai_start() != ESP_OK) { twai_driver_uninstall(); return false; }
     driverInstalle = true;
     return true;

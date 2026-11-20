@@ -15,6 +15,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -81,6 +82,10 @@ fun EcranSysteme(modifier: Modifier, client: MotoBleClient) {
                 Ligne("Allumé depuis", Protocole.duree(s.dureeFonctionnementS))
                 Ligne("Dernier redémarrage", s.raisonRedemarrage)
                 Ligne("Nombre de démarrages", "${s.nombreDeDemarrages}")
+                if (etat.dernierPlantage.isNotEmpty()) {
+                    Text("Dernier plantage (à envoyer à Claude) :", style = MaterialTheme.typography.labelMedium)
+                    SelectionContainer { Text(etat.dernierPlantage, style = MaterialTheme.typography.bodySmall) }
+                }
                 Ligne("Adresse MAC", s.adresseMac)
             }
             Carte("Firmware") {

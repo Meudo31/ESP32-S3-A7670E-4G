@@ -171,6 +171,7 @@ object Protocole {
                 raisonRedemarrage = j.optString("reset"),
                 nombreDeDemarrages = j.optLong("boots"),
             ))
+            "plantage" -> etat.copy(dernierPlantage = j.optString("txt"))
             "ble" -> etat.copy(liaison = EtatLiaison(
                 signalDbm = j.optInt("rssi"),
                 intervalleMs = j.optDouble("int", 0.0),
@@ -475,6 +476,8 @@ data class EtatDuModule(
     val sim: EtatSim? = null,
     val systeme: EtatSysteme? = null,
     val liaison: EtatLiaison? = null,
+    /** Résumé du dernier plantage du module (tâche fautive, adresses), vide s'il n'y en a pas. */
+    val dernierPlantage: String = "",
     val memoires: EtatMemoires? = null,
     val taches: List<TacheDuModule> = emptyList(),
     val carte: EtatCarte? = null,

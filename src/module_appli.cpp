@@ -61,6 +61,10 @@ volatile bool     parametresAVerifier = false;     // le téléphone vient de ch
 volatile bool     deconnexionANoter = false;
 volatile uint8_t  raisonDeLaDerniereDeconnexion = 0;
 uint32_t          debutDeLaConnexion = 0;
+// Chiffrement demandé par le module un peu APRÈS la connexion (voir onConnect).
+volatile uint32_t chiffrementADemanderAMs = 0;
+volatile bool     chiffrementDemande      = false;
+volatile uint16_t mtuNegocie              = 23;
 uint32_t          nombreDeDeconnexions = 0;
 const int         TAILLE_DE_L_HISTORIQUE = 4;
 String            historiqueDesDeconnexions[TAILLE_DE_L_HISTORIQUE];
@@ -139,6 +143,9 @@ void envoyerLeProcesseur() {
     JsonArray historique = liaison["hist"].to<JsonArray>();
     for (const String& ligne : historiqueDesDeconnexions) if (ligne.length() > 0) historique.add(ligne);
     envoyerUnDocument(liaison);
+    JsonDocument plantage;
+    decrireLeDernierPlantage(plantage);
+    envoyerUnDocument(plantage);
 }
 void envoyerLesMemoires()    { JsonDocument d; decrireLesMemoires(d);         envoyerUnDocument(d); }
 void envoyerLeBusCAN()       { JsonDocument d; decrireLeBusCAN(d);            envoyerUnDocument(d); }
@@ -323,25 +330,9 @@ void commandeEnvoyerUnSMS(const char* nom, const ArgumentsDeCommande& arguments)
     repondreALAppli(nom, accepte, accepte ? "SMS en cours d'envoi" : "Numéro ou texte vide, ou file pleine");
 }
 
-// Chaque SMS part dans un message : {"t":"sms","i":3,"de":"+336...","date":"...","txt":"...","lu":1}
+// La liste est lue et envoyée par la tâche SMS (la lecture peut durer plusieurs secondes).
 void commandeListerLesSMS(const char* nom, const ArgumentsDeCommande&) {
-    int nombre = 0;
-    JsonDocument debut;
-    debut["t"] = "sms_liste_debut";
-    envoyerUnDocument(debut);
-    const bool reussi = listerLesSMS([&](const MessageSMS& sms) {
-        JsonDocument d;
-        d["t"]    = "sms";
-        d["i"]    = sms.numeroDansLaSim;
-        d["de"]   = sms.expediteur;
-        d["date"] = sms.date;
-        d["txt"]  = sms.texte;
-        d["lu"]   = sms.lu ? 1 : 0;
-        envoyerUnDocument(d);
-        nombre++;
-        vTaskDelay(pdMS_TO_TICKS(10));
-    });
-    repondreALAppli(nom, reussi, reussi ? (String(nombre) + " SMS").c_str() : "Le modem ne répond pas");
+    if (!demanderLaListeDesSMS()) repondreALAppli(nom, false, "Module SMS occupé, réessayer");
 }
 
 void commandeSupprimerUnSMS(const char* nom, const ArgumentsDeCommande& arguments) {
@@ -351,7 +342,7 @@ void commandeSupprimerUnSMS(const char* nom, const ArgumentsDeCommande& argument
 
 void commandeAppeler(const char* nom, const ArgumentsDeCommande& arguments) {
     const bool lance = appeler(arguments.premier);
-    repondreALAppli(nom, lance, lance ? "Appel en cours" : "Numéro vide ou modem sans voix");
+    repondreALAppli(nom, lance, lance ? "Appel en cours" : "Numéro vide");
 }
 
 void commandeDecrocher(const char* nom, const ArgumentsDeCommande&) {
@@ -701,7 +692,22 @@ size_t copierLeTexteEcrit(BLECharacteristic* caracteristique, char* tampon, size
     return taille;
 }
 
+bool telephoneDejaAppaire(const uint8_t* adresse) {
+    int nombre = esp_ble_get_bond_device_num();
+    if (nombre <= 0) return false;
+    if (nombre > 15) nombre = 15;
+    esp_ble_bond_dev_t liste[15];
+    if (esp_ble_get_bond_device_list(&nombre, liste) != ESP_OK) return false;
+    for (int i = 0; i < nombre; i++) {
+        if (memcmp(liste[i].bd_addr, adresse, sizeof(esp_bd_addr_t)) == 0) return true;
+    }
+    return false;
+}
+
 class RappelsDuServeur : public BLEServerCallbacks {
+    void onMtuChanged(BLEServer*, esp_ble_gatts_cb_param_t* parametres) override {
+        mtuNegocie = parametres->mtu.mtu;
+    }
     void onConnect(BLEServer*, esp_ble_gatts_cb_param_t* parametres) override {
         telephoneConnecte      = true;
         telephoneAuthentifie   = false;
@@ -717,8 +723,14 @@ class RappelsDuServeur : public BLEServerCallbacks {
         // Les paramètres tolérants (coupure après 20 s) ne sont PAS demandés ici : au même moment le téléphone
         // règle lui-même la liaison et le chiffrement démarre ; deux procédures croisées font couper la liaison
         // 40 s plus tard (raison 0x22). surveillerLaLiaison() les demande une fois la liaison bien installée.
-        // Demande le chiffrement : le téléphone affiche la saisie du code PIN s'il n'est pas encore appairé.
-        esp_ble_set_encryption(parametres->connect.remote_bda, ESP_BLE_SEC_ENCRYPT_MITM);
+        // Le chiffrement n'est plus demandé tout de suite : au même moment, le téléphone négocie le MTU et,
+        // s'il est déjà appairé, démarre lui-même le chiffrement. Les deux demandes croisées donnaient
+        // « earlier enc was not done », un MTU resté à 23 (tous les messages « trop longs ») puis une coupure
+        // 0x22 au bout de 40 s (log de Meudo du 20/11/2026). surveillerLaLiaison() le demande plus tard
+        // si le téléphone ne l'a pas fait : 1,5 s pour un téléphone inconnu (saisie du code PIN), 6 s sinon.
+        mtuNegocie              = 23;
+        chiffrementDemande      = false;
+        chiffrementADemanderAMs = millis() + (telephoneDejaAppaire(parametres->connect.remote_bda) ? 6000 : 1500);
         Serial.println("[APPLI] Téléphone connecté, authentification...");
     }
     void onDisconnect(BLEServer*, esp_ble_gatts_cb_param_t* parametres) override {
@@ -840,6 +852,17 @@ void surveillerLaLiaison() {
         demandesSansSucces = 0;
     }
     if (!telephoneConnecte) return;
+
+    if (!telephoneAuthentifie && !chiffrementDemande && (int32_t)(millis() - chiffrementADemanderAMs) >= 0) {
+        chiffrementDemande = true;
+        esp_ble_set_encryption(adresseDuTelephone, ESP_BLE_SEC_ENCRYPT_MITM);
+    }
+    static uint16_t mtuAnnonce = 0;
+    if (telephoneAuthentifie && mtuNegocie != mtuAnnonce && millis() - debutDeLaConnexion >= 3 * UNE_SECONDE_MS) {
+        mtuAnnonce = mtuNegocie;
+        ecrireDansLeJournal("[APPLI] MTU : %u octets%s.", (unsigned)mtuNegocie,
+                            mtuNegocie <= 23 ? " (trop petit : l'appli doit le renégocier)" : "");
+    }
 
     if (millis() - derniereMesure >= 5 * UNE_SECONDE_MS) {
         derniereMesure = millis();
@@ -968,7 +991,11 @@ void publierUnEvenementVersLAppli(JsonDocument& message) {
     char texte[TAILLE_MAXIMUM_D_UN_MESSAGE];
     const size_t taille = serializeJson(message, texte, sizeof(texte));
     if (taille > tailleMaximumDUneNotification()) {
-        Serial.printf("[APPLI] Message « %s » trop long (%u octets) : non envoyé.\n", message["t"].as<const char*>(), (unsigned)taille);
+        static uint32_t dernierAvertissement = 0;   // une ligne toutes les 10 s au plus (sinon le port série déborde)
+        if (millis() - dernierAvertissement < 10 * UNE_SECONDE_MS) return;
+        dernierAvertissement = millis();
+        Serial.printf("[APPLI] Message « %s » trop long (%u octets, MTU %u) : non envoyé.\n",
+                      message["t"].as<const char*>(), (unsigned)taille, (unsigned)(tailleMaximumDUneNotification() + 3));
         return;
     }
     notifier(caracDonnees, (const uint8_t*)texte, taille);
@@ -998,7 +1025,7 @@ void envoyerDesOctetsALAppli(const uint8_t* octets, size_t taille) { notifier(ca
 
 size_t tailleMaximumDUneNotification() {
     uint16_t mtu = 23;
-    if (serveur != nullptr && telephoneConnecte) mtu = serveur->getPeerMTU(identifiantDeConnexion);
+    if (serveur != nullptr && telephoneConnecte) mtu = max((uint16_t)serveur->getPeerMTU(identifiantDeConnexion), (uint16_t)mtuNegocie);
     if (mtu < 23) mtu = 23;
     return min((size_t)(mtu - 3), (size_t)500);
 }

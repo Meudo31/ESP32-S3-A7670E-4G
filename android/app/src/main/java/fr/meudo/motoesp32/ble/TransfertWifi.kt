@@ -64,13 +64,27 @@ class TransfertWifi(private val context: Context) {
             return "Connexion au Wi-Fi du module impossible (refusée, ou partage de connexion actif ?)"
         }
         // Le point d'accès vient de démarrer : on vérifie que le serveur répond.
-        repeat(10) {
+        // Jusqu'à ~30 s : juste après la connexion, le téléphone et le module règlent encore le partage
+        // de l'antenne avec le Bluetooth ; les premiers essais peuvent échouer.
+        repeat(20) {
             if (ping()) return null
             kotlinx.coroutines.delay(500)
         }
         quitter()
-        return "Le module ne répond pas sur le Wi-Fi"
+        if (vpnActif()) {
+            return "Le module ne répond pas sur le Wi-Fi : un VPN est actif sur ce téléphone. " +
+                "Désactive ton VPN pendant la mise à jour, puis réessaie ($raisonDuDernierEchec)"
+        }
+        return "Le module ne répond pas sur le Wi-Fi. Si un VPN est actif sur ce téléphone, " +
+            "désactive-le puis réessaie ($raisonDuDernierEchec)"
     }
+
+    /** Un VPN détourne les requêtes vers 192.168.4.1 et empêche de joindre le module (vu chez Meudo, 20/11/2026). */
+    private fun vpnActif(): Boolean = runCatching {
+        connectivite.allNetworks.any {
+            connectivite.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
+        }
+    }.getOrDefault(false)
 
     fun quitter() {
         rappel?.let { runCatching { connectivite.unregisterNetworkCallback(it) } }
@@ -86,13 +100,21 @@ class TransfertWifi(private val context: Context) {
         }
     }
 
+    /** Raison du dernier échec de ping (affichée dans le message d'erreur, pour le diagnostic). */
+    private var raisonDuDernierEchec = ""
+
     private suspend fun ping(): Boolean = withContext(Dispatchers.IO) {
         runCatching {
             val c = ouvrir("/ping")
-            c.connectTimeout = 2_000; c.readTimeout = 2_000
-            val ok = c.responseCode == 200
-            c.disconnect(); ok
-        }.getOrDefault(false)
+            c.connectTimeout = 3_000; c.readTimeout = 3_000
+            val code = c.responseCode
+            c.disconnect()
+            if (code != 200) raisonDuDernierEchec = "réponse HTTP $code"
+            code == 200
+        }.getOrElse { e ->
+            raisonDuDernierEchec = "${e.javaClass.simpleName} : ${e.message ?: "sans détail"}"
+            false
+        }
     }
 
     /** Télécharge un fichier de la carte SD ; [progression] reçoit (reçus, total). */

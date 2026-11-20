@@ -27,6 +27,12 @@ void annulerLaMiseAJourEnCours();
 
 bool miseAJourEnCours();
 
+// Vérifie le début d'un fichier de mise à jour (au moins 36 octets). Renvoie nullptr s'il s'agit bien d'un
+// programme (firmware.bin), sinon la raison du refus. Une image complète (firmware-complet-0x0.bin, faite
+// pour le flash par USB à l'adresse 0x0) commence par le bootloader : écrite à la place du programme,
+// elle empêcherait la carte de démarrer.
+const char* problemeDansLeDebutDuFirmware(const uint8_t* octets, size_t taille);
+
 // Programme un redémarrage dans « delaiMs » millisecondes (laisse le temps d'envoyer la réponse).
 void redemarrerDansQuelquesInstants(uint32_t delaiMs);
 

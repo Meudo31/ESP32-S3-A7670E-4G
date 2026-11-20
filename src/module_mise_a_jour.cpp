@@ -5,6 +5,8 @@
 #include "module_appli.h"
 #include "module_journal.h"
 #include "module_systeme.h"
+#include "module_wifi.h"
+#include "module_synchro.h"
 
 namespace {
 
@@ -20,6 +22,8 @@ QueueHandle_t     fileDeLaMiseAJour  = nullptr;
 volatile bool     enCours            = false;
 size_t            tailleAttendue     = 0;
 size_t            tailleRecue        = 0;
+uint32_t          dernierMorceauMs   = 0;
+bool              refusSignale       = false;   // un seul « ERR » pour une rafale de morceaux orphelins
 volatile uint32_t momentDuRedemarrage = 0;   // 0 = aucun redémarrage prévu
 
 void repondre(const char* texte) { envoyerUneReponseDeMiseAJourALAppli(texte); }
@@ -45,12 +49,25 @@ void commencer(const char* arguments) {
         repondre("ERR fichier trop gros pour la partition de mise à jour");
         return;
     }
+    // Un deuxième START pendant un envoi qui avance encore (deux envois en parallèle depuis l'appli) :
+    // on le refuse au lieu de repartir de zéro, ce qui casserait les deux.
+    if (enCours && millis() - dernierMorceauMs < 5000) {
+        repondre("ERR une mise à jour est déjà en cours");
+        return;
+    }
+    // Mise à jour par Bluetooth : on coupe le Wi-Fi (point d'accès resté ouvert après un essai Wi-Fi raté,
+    // ou synchro maison). Les deux radios partagent l'antenne : avec le Wi-Fi allumé, le Bluetooth
+    // tombait à 1 Ko/s.
+    fermerLeWifi();
+    interrompreLaSynchronisation();
     if (enCours || Update.isRunning()) Update.abort();   // y compris un envoi Wi-Fi coupé net
     if (!Update.begin(taille, U_FLASH)) { echouer("début"); return; }
     if (nombreDeValeurs == 2 && strlen(empreinteMD5) == 32 && !Update.setMD5(empreinteMD5)) { echouer("md5"); return; }
     enCours        = true;
     tailleAttendue = taille;
     tailleRecue    = 0;
+    dernierMorceauMs = millis();
+    refusSignale   = false;
     ecrireDansLeJournal("[MISE A JOUR] Début : %lu octets.", taille);
     repondre("OK START");
 }
@@ -89,13 +106,25 @@ void traiterUnOrdre(const MessageDeMiseAJour& message) {
 }
 
 void ecrireUnMorceau(const MessageDeMiseAJour& message) {
-    if (!enCours) return;
-    // Une image d'application ESP32 commence toujours par l'octet 0xE9.
-    if (tailleRecue == 0 && message.taille > 0 && message.octets[0] != 0xE9) {
-        Update.abort();
-        enCours = false;
-        repondre("ERR ce n'est pas un firmware ESP32");
+    if (!enCours) {
+        // Morceau sans mise à jour en cours (après une erreur ou une annulation) : on le dit une fois,
+        // pour que l'appli arrête d'envoyer au lieu de continuer dans le vide.
+        if (!refusSignale) { refusSignale = true; repondre("ERR aucune mise à jour en cours"); }
         return;
+    }
+    dernierMorceauMs = millis();
+    // Une image d'application ESP32 commence toujours par l'octet 0xE9.
+    if (tailleRecue == 0) {
+        const char* probleme = problemeDansLeDebutDuFirmware(message.octets, message.taille);
+        if (probleme != nullptr) {
+            Update.abort();
+            enCours = false;
+            char texte[120];
+            snprintf(texte, sizeof(texte), "ERR %s", probleme);
+            ecrireDansLeJournal("[MISE A JOUR] Refusée : %s.", probleme);
+            repondre(texte);
+            return;
+        }
     }
     if (tailleRecue + message.taille > tailleAttendue) {
         Update.abort();
@@ -161,6 +190,16 @@ void annulerLaMiseAJourEnCours() {
 }
 
 bool miseAJourEnCours() { return enCours; }
+
+const char* problemeDansLeDebutDuFirmware(const uint8_t* octets, size_t taille) {
+    if (taille == 0 || octets[0] != 0xE9) return "ce n'est pas un firmware ESP32";
+    if (taille < 36) return nullptr;   // morceau trop court pour vérifier davantage (liaison à petit MTU)
+    // Un programme ESP-IDF porte sa description (esp_app_desc_t, mot magique 0xABCD5432) juste après
+    // l'en-tête de l'image (24 octets) et celui du premier segment (8 octets). Le bootloader n'en a pas.
+    const uint32_t motMagique = octets[32] | (octets[33] << 8) | (octets[34] << 16) | ((uint32_t)octets[35] << 24);
+    if (motMagique != 0xABCD5432UL) return "image complète pour l'USB : envoyer firmware.bin, pas firmware-complet-0x0.bin";
+    return nullptr;
+}
 
 void redemarrerDansQuelquesInstants(uint32_t delaiMs) {
     momentDuRedemarrage = millis() + delaiMs;

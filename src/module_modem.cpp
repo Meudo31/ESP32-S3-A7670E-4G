@@ -22,6 +22,9 @@ const int  NOMBRE_MAXIMUM_D_ABONNEMENTS = 20;
 Abonnement abonnements[NOMBRE_MAXIMUM_D_ABONNEMENTS];
 int        nombreDAbonnements = 0;
 
+const size_t  LONGUEUR_MAXIMUM_D_UNE_LIGNE = 2048;
+volatile bool smsAReregler = false;   // le modem vient de signaler « SMS DONE »
+
 // ─────────────────────────────── Lecture des lignes ───────────────────────────────
 
 // Lit les caractères disponibles. Renvoie true quand une ligne complète est prête.
@@ -32,6 +35,13 @@ bool lireUneLigne(String& ligne, uint32_t attenteMaximumMs) {
             const char caractere = (char)liaisonModem.read();
             if (caractere == '\r') continue;
             if (caractere == '\n') {
+                ligne = ligneEnCoursDeLecture;
+                ligneEnCoursDeLecture = "";
+                return true;
+            }
+            // Garde-fou : des données sans fin de ligne (fichier, bruit sur le fil) ne doivent pas
+            // remplir la mémoire. On coupe la ligne et on la rend telle quelle.
+            if (ligneEnCoursDeLecture.length() >= LONGUEUR_MAXIMUM_D_UNE_LIGNE) {
                 ligne = ligneEnCoursDeLecture;
                 ligneEnCoursDeLecture = "";
                 return true;
@@ -159,7 +169,7 @@ void lireLIdentiteDuModem() {
     // Les variantes sans voix refusent les commandes audio.
     identite.voixDisponible = envoyerSansVerifierQueLeModemEstPret("AT+CLVL?", nullptr, 2000) == ResultatAT::OK;
     ecrireDansLeJournal("[MODEM] Modèle %s, logiciel %s. Voix et haut-parleur : %s.", identite.modele.c_str(),
-                        identite.versionLogiciel.c_str(), identite.voixDisponible ? "disponibles" : "NON disponibles sur ce modèle");
+                        identite.versionLogiciel.c_str(), identite.voixDisponible ? "disponibles" : "AT+CLVL? refusé (peut-être pas de voix ; un appel reste possible à tester)");
 }
 
 void attendreLaCarteSIM() {
@@ -176,15 +186,30 @@ void attendreLaCarteSIM() {
     ecrireDansLeJournal("[MODEM] Carte SIM absente ou illisible.");
 }
 
+// Réglages des SMS. Juste après l'allumage du modem, la partie SMS n'est prête qu'au message
+// « SMS DONE » (plusieurs secondes après la carte SIM) : avant, ces commandes répondent ERROR et
+// le modem ne prévient jamais de l'arrivée d'un SMS. On insiste donc, et on recommence à « SMS DONE ».
+void reglerLesSMS() {
+    bool reussi = false;
+    for (int essai = 0; essai < 15 && !reussi; essai++) {
+        if (essai > 0) vTaskDelay(pdMS_TO_TICKS(2000));
+        reussi = envoyerSansVerifierQueLeModemEstPret("AT+CMGF=1", nullptr, 2000) == ResultatAT::OK          // mode texte
+              && envoyerSansVerifierQueLeModemEstPret("AT+CSCS=\"UCS2\"", nullptr, 2000) == ResultatAT::OK   // accents
+              && envoyerSansVerifierQueLeModemEstPret("AT+CSMP=17,167,0,8", nullptr, 2000) == ResultatAT::OK // SMS envoyés en UCS2
+              && envoyerSansVerifierQueLeModemEstPret("AT+CNMI=2,1,0,0,0", nullptr, 2000) == ResultatAT::OK; // prévenir (+CMTI)
+    }
+    ecrireDansLeJournal(reussi ? "[MODEM] SMS prêts (réception signalée par +CMTI)."
+                               : "[MODEM] Réglage des SMS refusé par le modem : la réception sera vérifiée chaque minute.");
+}
+
+void quandLesSMSDuModemSontPrets(const String&) { smsAReregler = true; }
+
 void reglerLeModem() {
     envoyerSansVerifierQueLeModemEstPret("ATE0", nullptr, 1000);                    // pas d'écho des commandes
     envoyerSansVerifierQueLeModemEstPret("AT+CMEE=2", nullptr, 1000);               // erreurs en texte clair
     lireLIdentiteDuModem();
     attendreLaCarteSIM();
-    envoyerSansVerifierQueLeModemEstPret("AT+CMGF=1", nullptr, 1000);               // SMS en mode texte
-    envoyerSansVerifierQueLeModemEstPret("AT+CSCS=\"UCS2\"", nullptr, 1000);        // textes en UCS2 (accents)
-    envoyerSansVerifierQueLeModemEstPret("AT+CSMP=17,167,0,8", nullptr, 1000);      // SMS envoyés en UCS2
-    envoyerSansVerifierQueLeModemEstPret("AT+CNMI=2,1,0,0,0", nullptr, 1000);       // prévenir à l'arrivée d'un SMS (+CMTI)
+    reglerLesSMS();
     envoyerSansVerifierQueLeModemEstPret("AT+CLIP=1", nullptr, 1000);               // numéro de l'appelant (+CLIP)
 }
 
@@ -200,6 +225,10 @@ void tacheModem(void*) {
         if (liaisonModem.available() && prendreLeModem(0)) {
             traiterLesLignesEnAttente();
             rendreLeModem();
+        }
+        if (smsAReregler) {   // le modem a redémarré sa partie SMS : on remet nos réglages
+            smsAReregler = false;
+            reglerLesSMS();
         }
         vTaskDelay(pdMS_TO_TICKS(20));
     }
@@ -287,6 +316,7 @@ bool demarrerModuleModem() {
     verrouDuModem     = xSemaphoreCreateRecursiveMutex();
     evenementsDuModem = xEventGroupCreate();
     if (verrouDuModem == nullptr || evenementsDuModem == nullptr) return false;
+    ecouterLesNotificationsDuModem("SMS DONE", quandLesSMSDuModemSontPrets);
     liaisonModem.setRxBufferSize(4096);   // les listes de SMS peuvent être longues
     return creerTacheSurveillee(tacheModem, "Modem", 6144, PRIORITE_HAUTE, COEUR_COMMUNICATIONS);
 }
