@@ -71,7 +71,7 @@ class TransfertWifi(private val context: Context) {
             kotlinx.coroutines.delay(500)
         }
         quitter()
-        return "Le module ne répond pas sur le Wi-Fi"
+        return "Le module ne répond pas sur le Wi-Fi ($raisonDuDernierEchec)"
     }
 
     fun quitter() {
@@ -88,13 +88,21 @@ class TransfertWifi(private val context: Context) {
         }
     }
 
+    /** Raison du dernier échec de ping (affichée dans le message d'erreur, pour le diagnostic). */
+    private var raisonDuDernierEchec = ""
+
     private suspend fun ping(): Boolean = withContext(Dispatchers.IO) {
         runCatching {
             val c = ouvrir("/ping")
             c.connectTimeout = 3_000; c.readTimeout = 3_000
-            val ok = c.responseCode == 200
-            c.disconnect(); ok
-        }.getOrDefault(false)
+            val code = c.responseCode
+            c.disconnect()
+            if (code != 200) raisonDuDernierEchec = "réponse HTTP $code"
+            code == 200
+        }.getOrElse { e ->
+            raisonDuDernierEchec = "${e.javaClass.simpleName} : ${e.message ?: "sans détail"}"
+            false
+        }
     }
 
     /** Télécharge un fichier de la carte SD ; [progression] reçoit (reçus, total). */
