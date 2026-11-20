@@ -22,6 +22,8 @@ QueueHandle_t     fileDeLaMiseAJour  = nullptr;
 volatile bool     enCours            = false;
 size_t            tailleAttendue     = 0;
 size_t            tailleRecue        = 0;
+uint32_t          dernierMorceauMs   = 0;
+bool              refusSignale       = false;   // un seul « ERR » pour une rafale de morceaux orphelins
 volatile uint32_t momentDuRedemarrage = 0;   // 0 = aucun redémarrage prévu
 
 void repondre(const char* texte) { envoyerUneReponseDeMiseAJourALAppli(texte); }
@@ -47,6 +49,12 @@ void commencer(const char* arguments) {
         repondre("ERR fichier trop gros pour la partition de mise à jour");
         return;
     }
+    // Un deuxième START pendant un envoi qui avance encore (deux envois en parallèle depuis l'appli) :
+    // on le refuse au lieu de repartir de zéro, ce qui casserait les deux.
+    if (enCours && millis() - dernierMorceauMs < 5000) {
+        repondre("ERR une mise à jour est déjà en cours");
+        return;
+    }
     // Mise à jour par Bluetooth : on coupe le Wi-Fi (point d'accès resté ouvert après un essai Wi-Fi raté,
     // ou synchro maison). Les deux radios partagent l'antenne : avec le Wi-Fi allumé, le Bluetooth
     // tombait à 1 Ko/s.
@@ -58,6 +66,8 @@ void commencer(const char* arguments) {
     enCours        = true;
     tailleAttendue = taille;
     tailleRecue    = 0;
+    dernierMorceauMs = millis();
+    refusSignale   = false;
     ecrireDansLeJournal("[MISE A JOUR] Début : %lu octets.", taille);
     repondre("OK START");
 }
@@ -96,7 +106,13 @@ void traiterUnOrdre(const MessageDeMiseAJour& message) {
 }
 
 void ecrireUnMorceau(const MessageDeMiseAJour& message) {
-    if (!enCours) return;
+    if (!enCours) {
+        // Morceau sans mise à jour en cours (après une erreur ou une annulation) : on le dit une fois,
+        // pour que l'appli arrête d'envoyer au lieu de continuer dans le vide.
+        if (!refusSignale) { refusSignale = true; repondre("ERR aucune mise à jour en cours"); }
+        return;
+    }
+    dernierMorceauMs = millis();
     // Une image d'application ESP32 commence toujours par l'octet 0xE9.
     if (tailleRecue == 0) {
         const char* probleme = problemeDansLeDebutDuFirmware(message.octets, message.taille);

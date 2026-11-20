@@ -479,9 +479,16 @@ class MotoBleClient(private val context: Context, private val scope: CoroutineSc
 
     /** Envoie un firmware (.bin produit par PlatformIO) au module. */
     fun mettreAJour(firmware: ByteArray) {
-        if (_ota.value is EtatOta.EnCours) return
-        scope.launch { executerMiseAJour(firmware) }
+        // Une seule mise à jour à la fois. L'état passe à « en cours » tout de suite (et pas seulement quand
+        // l'envoi commence) : un deuxième choix de fichier pendant la connexion au Wi-Fi lançait une deuxième
+        // mise à jour en parallèle. Les deux se coupaient le Wi-Fi et se gênaient sur le Bluetooth
+        // (« Refusée : ce n'est pas un firmware ESP32 », envoi à 1 Ko/s).
+        if (_ota.value is EtatOta.EnCours || miseAJourEnCours?.isActive == true) return
+        _ota.value = EtatOta.EnCours(0f, "Préparation…")
+        miseAJourEnCours = scope.launch { executerMiseAJour(firmware) }
     }
+
+    private var miseAJourEnCours: kotlinx.coroutines.Job? = null
 
     fun signalerErreurOta(message: String) { _ota.value = EtatOta.Erreur(message) }
 
