@@ -1097,6 +1097,7 @@ bool seConnecterALaMaison(const Reglages& r) {
 void eteindreLeWifiDeLaMaison() {
     if (wifiOuvert()) return;   // le point d'accès de l'appli a pris la main : on n'y touche pas
     WiFi.disconnect(true);
+    vTaskDelay(pdMS_TO_TICKS(300));   // laisse lwIP finir avant d'arrêter le Wi-Fi (même course qu'au point d'accès)
     WiFi.mode(WIFI_OFF);
 }
 

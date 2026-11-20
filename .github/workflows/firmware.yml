@@ -6,12 +6,14 @@ on:
       - "src/**"
       - "include/**"
       - "platformio.ini"
+      - "partitions_moto.csv"
       - ".github/workflows/firmware.yml"
   pull_request:
     paths:
       - "src/**"
       - "include/**"
       - "platformio.ini"
+      - "partitions_moto.csv"
       - ".github/workflows/firmware.yml"
   workflow_dispatch:
 
@@ -56,8 +58,6 @@ jobs:
             0x10000 $B/firmware.bin
           cp ~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin $B/boot_app0.bin
           ls -l $B/*.bin
-          # Ce que PlatformIO écrit vraiment par USB (adresses, mode de flash) : sert à vérifier l'image complète.
-          pio run -t upload -v --upload-port /dev/null 2>&1 | grep -m1 "write_flash" || true
 
       - name: Publier l'image complète (flash USB à 0x0)
         uses: actions/upload-artifact@v4

@@ -221,6 +221,11 @@ void allumer() {
     interrompreLaSynchronisation();   // le Wi-Fi de la maison et le point d'accès ne vont pas ensemble
     WiFi.mode(WIFI_AP);
     WiFi.softAP(NOM_DU_WIFI, motDePasseDuWifi.c_str(), 6, 0, 1);   // canal 6, visible, un seul téléphone
+    // Le démarrage du point d'accès finit dans une autre tâche (lwIP, cœur 0) : on attend qu'il soit
+    // vraiment prêt. Sans cette attente, un arrêt rapide (WIFI_OFF juste après WIFI_ON) coupait le Wi-Fi
+    // pendant que lwIP l'utilisait encore : plantage LoadProhibited dans ieee80211_output (0.7.2).
+    WiFi.waitStatusBits(AP_STARTED_BIT, 3000);
+    vTaskDelay(pdMS_TO_TICKS(300));
     serveur.begin();
     ouvert = true;
     derniereActivite = millis();
@@ -230,8 +235,12 @@ void allumer() {
 void eteindre() {
     serveur.stop();
     oublierLeFichierRecu(true);
-    WiFi.softAPdisconnect(true);
+    // Laisse lwIP finir ce qu'il envoyait (fermeture des connexions, annonces) avant d'arrêter le Wi-Fi.
+    vTaskDelay(pdMS_TO_TICKS(300));
+    WiFi.softAPdisconnect(false);
+    vTaskDelay(pdMS_TO_TICKS(300));
     WiFi.mode(WIFI_OFF);
+    vTaskDelay(pdMS_TO_TICKS(200));
     ouvert = false;
     ecrireDansLeJournal("[WIFI] Point d'accès fermé.");
 }
