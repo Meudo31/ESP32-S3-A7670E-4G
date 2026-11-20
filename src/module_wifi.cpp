@@ -127,7 +127,6 @@ void terminerLEnvoiDUnFichier() {
     if (reussi) serveur.send(200, "text/plain", "OK");
     else        serveur.send(500, "text/plain", recu.message.length() ? recu.message : String("Échec"));
     oublierLeFichierRecu(!reussi);
-    prioriteRadio(ESP_COEX_PREFER_BT);
 }
 
 // ─────────────────────────────── Téléchargement d'un fichier de la carte SD ───────────────────────────────
@@ -211,7 +210,6 @@ void recevoirUnMorceauDeFirmware() {
 
 void terminerLaMiseAJour() {
     if (erreurDeMiseAJour) {
-        prioriteRadio(ESP_COEX_PREFER_BT);
         ecrireDansLeJournal("[WIFI] Mise à jour refusée : %s.", messageDeMiseAJour.c_str());
         serveur.send(500, "text/plain", messageDeMiseAJour);
         return;
@@ -271,6 +269,18 @@ void tacheDuWifi(void*) {
         ouvertureDemandee = false;
         if (!ouvert) continue;
         serveur.handleClient();
+        // Tant qu'aucun téléphone n'est connecté au point d'accès : priorité au Bluetooth (sinon il décroche).
+        // Dès qu'un téléphone a rejoint le Wi-Fi : priorité au Wi-Fi, sinon les échanges HTTP (ping, envoi)
+        // n'ont presque plus de temps radio et l'appli conclut « le module ne répond pas sur le Wi-Fi ».
+        {
+            static int telephonesAvant = -1;
+            const int telephones = WiFi.softAPgetStationNum();
+            if (telephones != telephonesAvant) {
+                telephonesAvant = telephones;
+                prioriteRadio(telephones > 0 ? ESP_COEX_PREFER_WIFI : ESP_COEX_PREFER_BT);
+                ecrireDansLeJournal("[WIFI] %d téléphone(s) connecté(s) au point d'accès.", telephones);
+            }
+        }
         if (fermetureDemandee || millis() - derniereActivite > ARRET_APRES_INACTIVITE_MS) {
             fermetureDemandee = false;
             eteindre();

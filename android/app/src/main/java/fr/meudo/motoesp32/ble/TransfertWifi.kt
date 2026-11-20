@@ -64,7 +64,9 @@ class TransfertWifi(private val context: Context) {
             return "Connexion au Wi-Fi du module impossible (refusée, ou partage de connexion actif ?)"
         }
         // Le point d'accès vient de démarrer : on vérifie que le serveur répond.
-        repeat(10) {
+        // Jusqu'à ~30 s : juste après la connexion, le téléphone et le module règlent encore le partage
+        // de l'antenne avec le Bluetooth ; les premiers essais peuvent échouer.
+        repeat(20) {
             if (ping()) return null
             kotlinx.coroutines.delay(500)
         }
@@ -89,7 +91,7 @@ class TransfertWifi(private val context: Context) {
     private suspend fun ping(): Boolean = withContext(Dispatchers.IO) {
         runCatching {
             val c = ouvrir("/ping")
-            c.connectTimeout = 2_000; c.readTimeout = 2_000
+            c.connectTimeout = 3_000; c.readTimeout = 3_000
             val ok = c.responseCode == 200
             c.disconnect(); ok
         }.getOrDefault(false)
