@@ -139,6 +139,9 @@ void envoyerLeProcesseur() {
     JsonArray historique = liaison["hist"].to<JsonArray>();
     for (const String& ligne : historiqueDesDeconnexions) if (ligne.length() > 0) historique.add(ligne);
     envoyerUnDocument(liaison);
+    JsonDocument plantage;
+    decrireLeDernierPlantage(plantage);
+    envoyerUnDocument(plantage);
 }
 void envoyerLesMemoires()    { JsonDocument d; decrireLesMemoires(d);         envoyerUnDocument(d); }
 void envoyerLeBusCAN()       { JsonDocument d; decrireLeBusCAN(d);            envoyerUnDocument(d); }
@@ -323,25 +326,9 @@ void commandeEnvoyerUnSMS(const char* nom, const ArgumentsDeCommande& arguments)
     repondreALAppli(nom, accepte, accepte ? "SMS en cours d'envoi" : "Numéro ou texte vide, ou file pleine");
 }
 
-// Chaque SMS part dans un message : {"t":"sms","i":3,"de":"+336...","date":"...","txt":"...","lu":1}
+// La liste est lue et envoyée par la tâche SMS (la lecture peut durer plusieurs secondes).
 void commandeListerLesSMS(const char* nom, const ArgumentsDeCommande&) {
-    int nombre = 0;
-    JsonDocument debut;
-    debut["t"] = "sms_liste_debut";
-    envoyerUnDocument(debut);
-    const bool reussi = listerLesSMS([&](const MessageSMS& sms) {
-        JsonDocument d;
-        d["t"]    = "sms";
-        d["i"]    = sms.numeroDansLaSim;
-        d["de"]   = sms.expediteur;
-        d["date"] = sms.date;
-        d["txt"]  = sms.texte;
-        d["lu"]   = sms.lu ? 1 : 0;
-        envoyerUnDocument(d);
-        nombre++;
-        vTaskDelay(pdMS_TO_TICKS(10));
-    });
-    repondreALAppli(nom, reussi, reussi ? (String(nombre) + " SMS").c_str() : "Le modem ne répond pas");
+    if (!demanderLaListeDesSMS()) repondreALAppli(nom, false, "Module SMS occupé, réessayer");
 }
 
 void commandeSupprimerUnSMS(const char* nom, const ArgumentsDeCommande& arguments) {

@@ -40,6 +40,7 @@ Chaque notification contient un objet JSON dont le champ `t` donne le type.
 | `bat` | 5 s | `ok` (jauge présente), `v` V, `pct` %, `taux` %/h, `charge`, `pleine`, `alertes`, `source`, `autonomie` h, `mesure` (12 V / USB câblés), `v12`, `vusb`, `vmodem`, `jauge`, `temp` |
 | `4g` | 5 s | `pret`, `inscr` (code CREG), `op`, `techno`, `csq`, `dbm`, `sig` %, `mccmnc`, `tac`, `cell`, `bande`, `earfcn`, `rsrp`, `rsrq`, `rssi`, `snr`, `ip`, `apn` |
 | `sys` | 5 s | `fw`, `build`, `carte`, `puce`, `rev`, `coeurs`, `mhz`, `temp`, `flash`, `flash_mhz`, `prog`, `prog_libre`, `sdk`, `mac`, `part`, `up` s, `reset`, `boots` |
+| `plantage` | 5 s | `txt` : résumé du dernier plantage (tâche fautive, PC, cause, adresses de la pile), vide s'il n'y en a pas. Les adresses se décodent avec `firmware.elf` (artifact `firmware-elf` de la même compilation) : `xtensa-esp32s3-elf-addr2line -pfiaC -e firmware.elf 0x...` |
 | `ble` | 5 s | Liaison vue par le module : `rssi` dBm, `int` intervalle ms, `to` délai de coupure s, `deco` nombre de déconnexions, `hist` (4 dernières coupures : heure, raison, durée, signal) |
 | `mem` | 5 s | `ram_total` `ram_libre` `ram_min` `ram_bloc`, `psram_total` `psram_libre` `psram_min` `psram_bloc` (octets) |
 | `sim` | 15 s | `modele`, `logiciel`, `imei`, `voix` (le modem sait téléphoner), `etat`, `iccid`, `imsi`, `num`, `alerte_num`, `alertes` (0/1, interrupteur général), `al_dem`, `al_pos`, `al_dep` (0/1 : alerte d'allumage, de position trouvée, de déplacement) |
@@ -58,7 +59,7 @@ Pour ajouter une donnée : l'ajouter dans la fonction `decrire...()` du module c
 | `t` | Quand | Champs |
 |---|---|---|
 | `rep` | Réponse à chaque commande | `cmd`, `ok`, `msg` |
-| `sms_recu` | Un SMS arrive | `i` (emplacement dans la SIM), `de`, `date`, `txt` |
+| `sms_recu` | Un SMS arrive (annonce +CMTI, ou SMS non lu retrouvé au démarrage et chaque minute) | `i` (emplacement dans la SIM), `de`, `date`, `txt` (coupé à 300 octets) |
 | `sms_liste_debut`, puis `sms` | Après `SMS_LISTE` | `i`, `de`, `date`, `txt`, `lu` |
 | `sms_envoi` | Fin d'envoi d'un SMS | `num`, `ok` |
 | `photo` | Après `PHOTO` | `ok`, `chemin`, `taille`, `msg` |

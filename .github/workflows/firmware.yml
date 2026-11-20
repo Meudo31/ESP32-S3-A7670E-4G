@@ -49,6 +49,14 @@ jobs:
           name: firmware-esp32
           path: .pio/build/esp32-s3-devkitc-1/firmware.bin
 
+      # Fichier de symboles de la même compilation : il sert à traduire les adresses d'un rapport de plantage
+      # (écran Système de l'appli) en noms de fonctions et numéros de ligne.
+      - name: Publier firmware.elf (décodage des plantages)
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-elf
+          path: .pio/build/esp32-s3-devkitc-1/firmware.elf
+
       # Lien direct, sans zip et sans compte GitHub (compilé avec le code PIN d'exemple 123456) :
       # https://github.com/Meudo31/ESP32-S3-A7670E-4G/releases/download/firmware-test/firmware.bin
       - name: Mettre firmware.bin dans la release « firmware-test »

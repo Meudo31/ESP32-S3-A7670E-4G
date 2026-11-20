@@ -35,6 +35,11 @@ const TacheSurveillee& tacheSurveillee(int numero);
 // Raison du dernier redémarrage, en français (« Mise sous tension », « Plantage »...).
 const char* raisonDuDernierRedemarrage();
 
+// Résumé du dernier plantage enregistré (tâche fautive, adresses du programme), "" s'il n'y en a pas.
+const String& rapportDePlantage();
+// {"t":"plantage","txt":"..."} pour l'application.
+void decrireLeDernierPlantage(JsonDocument& document);
+
 // Nombre de démarrages depuis la première mise en service (mémorisé en flash).
 uint32_t nombreDeDemarrages();
 

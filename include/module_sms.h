@@ -32,6 +32,9 @@ bool demanderLEnvoiDUnSMS(const String& numero, const String& texte);
 // Lit tous les SMS de la carte SIM (appelle la fonction pour chacun). Renvoie false si le modem ne répond pas.
 bool listerLesSMS(const std::function<void(const MessageSMS&)>& pourChaqueSMS);
 
+// Demande à la tâche SMS d'envoyer à l'application la liste des SMS de la SIM (réponse SMS_LISTE).
+// Renvoie false si la file de la tâche SMS est pleine.
+bool demanderLaListeDesSMS();
 bool supprimerUnSMS(int numeroDansLaSim);
 
 bool demarrerModuleSMS();
