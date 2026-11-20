@@ -26,12 +26,17 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -163,11 +168,15 @@ private fun OngletAppels(client: MotoBleClient) {
                 )
             }
             BoutonsDAppel(client, appel?.etat ?: EtatAppel.Etat.AUCUN)
-            Text(
-                "Pas encore de micro sur le module : vous entendez le correspondant dans le haut-parleur, mais il ne vous entend pas.",
-                style = MaterialTheme.typography.bodySmall,
-            )
+            if (appel?.etat == EtatAppel.Etat.EN_COMMUNICATION) {
+                val muet = appel.microCoupe
+                OutlinedButton(onClick = { client.envoyerCommande("MICRO_MUET", if (muet) "0" else "1") }) {
+                    Text(if (muet) "🎙️ Rouvrir le micro" else "🔇 Couper le micro")
+                }
+                ClavierDTMF(client)
+            }
         }
+        CarteDuMicro(client, appel)
         Carte("Appeler") {
             OutlinedTextField(
                 value = numero, onValueChange = { numero = it.filter { c -> c.isDigit() || c == '+' } },
@@ -180,6 +189,51 @@ private fun OngletAppels(client: MotoBleClient) {
                 Text("Appeler")
             }
         }
+    }
+}
+
+/** Clavier pour envoyer des touches au correspondant (serveur vocal, messagerie). */
+@Composable
+private fun ClavierDTMF(client: MotoBleClient) {
+    val lignes = listOf("123", "456", "789", "*0#")
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        for (ligne in lignes) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                for (touche in ligne) {
+                    FilledTonalButton(onClick = { client.envoyerCommande("DTMF", touche.toString()) }) { Text(touche.toString()) }
+                }
+            }
+        }
+    }
+}
+
+/** Réglages du micro de la carte (relié au modem) et décrochage automatique. */
+@Composable
+private fun CarteDuMicro(client: MotoBleClient, appel: EtatAppel?) {
+    var gain by remember(appel?.gainMicro) { mutableFloatStateOf((appel?.gainMicro ?: 3).toFloat()) }
+    Carte("Micro") {
+        Text(
+            "Le micro est soudé sur la carte (petit boîtier métal « 6186 ») et relié au modem : " +
+                "le correspondant vous entend sans rien brancher. Votre voix à vous sort sur le haut-parleur branché sur SPK.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text("Sensibilité : ${gain.toInt()} / 8")
+        Slider(
+            value = gain, onValueChange = { gain = it }, valueRange = 0f..8f, steps = 7,
+            onValueChangeFinished = { client.envoyerCommande("MICRO_GAIN", gain.toInt().toString()) },
+        )
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Switch(
+                checked = appel?.decrochageAuto == true,
+                onCheckedChange = { client.envoyerCommande("APPEL_AUTO", if (it) "1" else "0") },
+            )
+            Text("Décrocher tout seul les appels du numéro des alertes", modifier = Modifier.weight(1f))
+        }
+        Text(
+            "Par SMS depuis le numéro des alertes : « Appelle » fait rappeler ce numéro par le module.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        OutlinedButton(onClick = { client.envoyerCommande("MICRO_TEST") }) { Text("Tester le micro (lecture des réglages du modem)") }
     }
 }
 

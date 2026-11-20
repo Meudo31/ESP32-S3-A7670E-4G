@@ -45,7 +45,7 @@ Chaque notification contient un objet JSON dont le champ `t` donne le type.
 | `sim` | 15 s | `modele`, `logiciel`, `imei`, `voix` (le modem sait téléphoner), `etat`, `iccid`, `imsi`, `num`, `alerte_num`, `alertes` (0/1, interrupteur général), `al_dem`, `al_pos`, `al_dep` (0/1 : alerte d'allumage, de position trouvée, de déplacement) |
 | `carte` | 15 s | `version` (V1/V2), `methode` (comment elle a été détectée), `camera`, `sd`, `sd_type`, `sd_total`, `sd_util`, `heure` (source de l'heure), `vol` |
 | `neo` | 15 s et à chaque changement | `num`, `nom`, `lum` 0-255, `allumee`, `noms` (les 13 animations) |
-| `appel` | 15 s et à chaque changement | `etat` (0 aucun, 1 sonnerie, 2 numérotation, 3 en communication), `num`, `duree` s |
+| `appel` | 15 s et à chaque changement | `etat` (0 aucun, 1 sonnerie, 2 numérotation, 3 en communication), `num`, `duree` s, `micg` gain du micro 0..8, `muet` 0/1, `auto` 0/1 (décrochage automatique du numéro des alertes) |
 | `can` | 1 s | Bus CAN de la moto : `etat` (`actif`, `silence`, `recherche`, `absent`), `kbps` (vitesse trouvée), `reglage` (0 = auto), `tps` trames/s, `total`, `err` (erreurs du bus), `enr` (enregistrement SD 0/1), `perdues`, `fichier`, `ids` (identifiants différents vus), `age` s depuis la dernière trame, `pb` (dernier problème), `tx` `rx` (broches), `dtc` : `[SPN, FMI, occurrences, source]`, et `v` : valeurs décodées présentes seulement si vues — `rpm`, `vit` km/h, `vav` roue avant, `pat` patinage, `rap` rapport, `pap` gaz %, `cpl` couple %, `tmot` °C, `carb` %, `auto` km, `debit` L/h, `conso` `cmoy` L/100 km, `bat` V, `text` °C, `odo` `trip` km, `pav` `par` bar, `tpav` `tpar` °C, `frein` `embr` `regul` `coupe` `beq` `clig` `clid` `warn` `croi` `route` (0/1), `chute` (capteur de chute brut), `lamp` (MIL 1, stop 2, alerte 4, protection 8), `obd` |
 | `can_ids` | sur `CAN_TRAMES` | `debut`, `fin`, `l` : `[identifiant hexa, 29 bits 0/1, longueur, compteur, données hexa, âge s]` ; plusieurs messages |
 | `camera` | à la connexion, sur `CAMERA_REGLAGES` et à chaque réglage | `pret` 0/1, `capteur` (OV2640…), `tmax` (plus grande résolution possible), `r` : objet `{nom: valeur}` de tous les réglages, `ns` : réglages refusés par le capteur |
@@ -85,7 +85,12 @@ Les arguments sont séparés du nom par un espace, et entre eux par `|`. Les nom
 | `SMS_ENVOYER numéro\|texte` | Envoie un SMS (découpé en plusieurs si besoin) |
 | `SMS_LISTE` | Liste les SMS de la carte SIM |
 | `SMS_SUPPRIMER i` | Supprime le SMS de l'emplacement `i` |
-| `APPELER numéro`, `DECROCHER`, `RACCROCHER` | Téléphone (sans micro pour l'instant : on entend seulement l'appelant) |
+| `APPELER numéro`, `DECROCHER`, `RACCROCHER` | Téléphone : voix du correspondant sur le haut-parleur, notre voix par le micro de la carte (relié au modem) |
+| `MICRO_GAIN 0..8` | Gain du micro (AT+CMICGAIN), mémorisé |
+| `MICRO_MUET 0\|1` | Coupe / rouvre le micro pendant l'appel (AT+CMUT) |
+| `MICRO_TEST` | Lit voie audio, gain, muet, volume dans le modem ; réponse `MICRO_TEST` |
+| `APPEL_AUTO 0\|1` | Décroche seul (après ~6 s) les appels du numéro des alertes, mémorisé |
+| `DTMF touches` | Envoie des touches (0-9 * # A-D) au correspondant pendant l'appel (AT+VTS) |
 | `VOLUME 0-5` | Volume du haut-parleur |
 | `ANNONCER texte` | Fait prononcer un texte au haut-parleur |
 | `ALERTES_NUMERO numéro` | Numéro qui reçoit les alertes SMS (vide = aucun) ; gardé dans le module |
