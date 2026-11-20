@@ -50,11 +50,14 @@ jobs:
         run: |
           B=.pio/build/esp32-s3-devkitc-1
           python ~/.platformio/packages/tool-esptoolpy/esptool.py --chip esp32s3 merge_bin -o $B/firmware-complet-0x0.bin \
-            --flash_mode keep --flash_freq keep --flash_size 16MB \
+            --flash_mode dio --flash_freq 80m --flash_size 16MB \
             0x0 $B/bootloader.bin 0x8000 $B/partitions.bin \
             0xe000 ~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin \
             0x10000 $B/firmware.bin
+          cp ~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin $B/boot_app0.bin
           ls -l $B/*.bin
+          # Ce que PlatformIO écrit vraiment par USB (adresses, mode de flash) : sert à vérifier l'image complète.
+          pio run -t upload -v --upload-port /dev/null 2>&1 | grep -m1 "write_flash" || true
 
       - name: Publier l'image complète (flash USB à 0x0)
         uses: actions/upload-artifact@v4
@@ -86,5 +89,6 @@ jobs:
           gh release view firmware-test >/dev/null 2>&1 || gh release create firmware-test --prerelease \
             --target "$GITHUB_SHA" --title "Firmware ESP32 (dernière version de test)" --notes "Firmware de test."
           gh release upload firmware-test .pio/build/esp32-s3-devkitc-1/firmware.bin --clobber
-          gh release upload firmware-test .pio/build/esp32-s3-devkitc-1/firmware-complet-0x0.bin --clobber
+          B=.pio/build/esp32-s3-devkitc-1
+          gh release upload firmware-test $B/firmware-complet-0x0.bin $B/bootloader.bin $B/partitions.bin $B/boot_app0.bin --clobber
           gh release edit firmware-test --notes "Firmware compilé depuis la branche ${GITHUB_REF_NAME}, commit ${GITHUB_SHA::7}, le $(date -u '+%d/%m/%Y à %H:%M') UTC. Code PIN Bluetooth : 123456 (celui de include/secrets.example.h)."
